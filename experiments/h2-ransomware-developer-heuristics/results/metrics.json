@@ -1,0 +1,21 @@
+{
+  "developer_sessions": 3,
+  "total_developer_writes": 5000,
+  "total_ransomware_attacks": 50,
+  "baseline": {
+    "developer_false_positives": 3,
+    "developer_fp_rate": 1.0,
+    "ransomware_detected": 50,
+    "ransomware_tpr": 1.0,
+    "mean_files_lost": 51.0,
+    "max_files_lost": 51
+  },
+  "sentinel_dual_invariant": {
+    "developer_false_positives": 0,
+    "developer_fp_rate": 0.0,
+    "ransomware_detected": 50,
+    "ransomware_tpr": 1.0,
+    "mean_files_lost": 3.0,
+    "max_files_lost": 3
+  }
+}

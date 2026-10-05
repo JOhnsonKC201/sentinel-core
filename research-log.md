@@ -32,7 +32,20 @@ Benchmarked Baseline Monolithic Scanner vs. SentinelCore Tiered Cascade over 10,
 - **Baseline**: Mean = 31.51 ms, P50 = 7.18 ms, P90 = 160.01 ms, P99 = 202.05 ms, 1,701 Timeouts (> 50ms).
 - **SentinelCore**: Mean = 0.285 ms, P50 = 0.064 ms, P90 = 1.439 ms, P99 = 1.671 ms, **0 Timeouts**.
 - **Speedup**: **120.9x faster P99 latency**; 110.5x faster mean latency; 110.2x wall-clock execution speedup.
-- **Outcome**: Hypothesis H1 CONFIRMED / SUPPORTED.
+- **Outcome**: Hypothesis H1 CONFIRMED / SUPPORTED (`93e9fe7`).
+
+---
+
+## 2026-10-05 — Experiment H2 Execution & Validation (Run 002)
+
+### Protocol Pre-Registration
+Locked protocol for Hypothesis H2 in Git (`6c83278`).
+
+### Execution & Empirical Findings
+Benchmarked Baseline Rate-Only Heuristic vs. SentinelCore Dual-Invariant Engine over 5,000 developer write events (`cargo`, `node`, `git`) and 50 simulated zero-day ransomware attacks:
+- **Baseline (Rate-Only)**: False alarm rate = 100% (killed `rustc.exe`, `node.exe`, `git.exe` at write #51); mean files lost per attack = 51.0 files.
+- **SentinelCore (Dual-Invariant)**: Developer false alarms = **0 (0.00% FPR)**; ransomware detection rate = **100.0%**; mean files lost per attack = **3.0 files** (17x damage reduction).
+- **Outcome**: Hypothesis H2 CONFIRMED / SUPPORTED.
 
 ### Next Step
-Outer loop reflection cycle 1: Deepen into Hypothesis H2 (Ransomware Burst Detection vs Developer Workloads).
+Outer loop reflection cycle 2: Advance to Hypothesis H3 (Kernel Lookaside List Non-Paged Pool Stress Testing).

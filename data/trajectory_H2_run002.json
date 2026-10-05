@@ -1,0 +1,11 @@
+{
+  "experiment_id": "run_002",
+  "hypothesis": "H2",
+  "metric_name": "developer_fp_rate",
+  "baseline": 1.0,
+  "metric_value": 0.0,
+  "delta": "-1.0000",
+  "files_lost_reduction": "51.0 -> 3.0",
+  "change_summary": "Sliding-window write-entropy differential + process lineage fast-path",
+  "timestamp": "2026-10-05 11:40:48"
+}
