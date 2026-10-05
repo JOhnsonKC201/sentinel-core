@@ -1,0 +1,60 @@
+;;;
+;;; SentinelCore File System Minifilter Driver INF
+;;; Assigned Altitude: 320500 (FSFilter Anti-Virus)
+;;;
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = "AntiVirus"
+ClassGuid   = {b1d5a820-7def-11d2-94b2-00105a0c885d}
+Provider    = %ManufacturerName%
+DriverVer   = 10/05/2026,1.0.0.0
+CatalogFile = sentinel-filter.cat
+
+[DestinationDirs]
+DefaultDestDir          = 12
+Sentinel.DriverFiles    = 12
+
+[SourceDisksNames]
+1 = %DiskId1%,,,""
+
+[SourceDisksFiles]
+sentinel-filter.sys = 1,,
+
+[DefaultInstall]
+OptionDesc          = %ServiceDescription%
+CopyFiles           = Sentinel.DriverFiles
+
+[DefaultInstall.Services]
+AddService          = %ServiceName%,,Sentinel.Service
+
+[Sentinel.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %12%\sentinel-filter.sys
+Dependencies     = "FltMgr"
+ServiceType      = 2                            ; SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                            ; SERVICE_DEMAND_START
+ErrorControl     = 1                            ; SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Anti-Virus"
+AddReg           = Sentinel.AddRegistry
+
+[Sentinel.AddRegistry]
+HKR,,"DebugFlags",0x00010001 ,0x0
+HKR,,"SupportedFeatures",0x00010001,0x3
+HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
+HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+
+[Sentinel.DriverFiles]
+sentinel-filter.sys
+
+[Strings]
+ManufacturerName        = "SentinelCore Security"
+ServiceDescription      = "SentinelCore Anti-Virus File System Minifilter"
+ServiceName             = "SentinelFilter"
+DefaultInstance         = "SentinelFilter - Top Instance"
+Instance1.Name          = "SentinelFilter - Top Instance"
+Instance1.Altitude      = "320500"
+Instance1.Flags         = 0x0
+DiskId1                 = "SentinelCore Installation Device"
