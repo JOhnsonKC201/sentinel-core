@@ -1,0 +1,34 @@
+{
+  "workload_size": 10000,
+  "baseline": {
+    "mean_ms": 31.505983169999997,
+    "p50_ms": 7.180350000000001,
+    "p90_ms": 160.00655,
+    "p95_ms": 192.02466,
+    "p99_ms": 202.053208,
+    "p99_9_ms": 220.17052690000006,
+    "max_ms": 252.4423,
+    "timeouts_over_50ms": 1701,
+    "total_elapsed_s": 315.08307760000025
+  },
+  "treatment_tiered": {
+    "mean_ms": 0.28514708,
+    "p50_ms": 0.0638,
+    "p90_ms": 1.4394,
+    "p95_ms": 1.595,
+    "p99_ms": 1.6708220000000005,
+    "p99_9_ms": 2.1620016000000004,
+    "max_ms": 3.3058,
+    "timeouts_over_50ms": 0,
+    "total_elapsed_s": 2.8551618000001326,
+    "tier_distribution": {
+      "tier1_cache_hits": 9860,
+      "tier2_entropy_gates": 20,
+      "tier3_async_passes": 120
+    }
+  },
+  "speedup": {
+    "mean_speedup": 110.49028862578567,
+    "p99_speedup": 120.93042107417783
+  }
+}

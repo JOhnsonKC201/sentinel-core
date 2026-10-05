@@ -1,0 +1,12 @@
+{
+  "experiment_id": "run_001",
+  "hypothesis": "H1",
+  "metric_name": "P99_latency_ms",
+  "baseline": 202.053208,
+  "metric_value": 1.6708220000000005,
+  "delta": "-200.3824 ms",
+  "p99_speedup": "120.9x",
+  "wall_time_s": 2.8551618000001326,
+  "change_summary": "Tiered cascade: LRU SHA-256 cache + 64KB Shannon entropy gate + async YARA queue",
+  "timestamp": "2026-10-05 11:37:17"
+}

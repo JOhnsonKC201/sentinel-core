@@ -18,13 +18,21 @@ Initiated autonomous research project to engineer, evaluate, and benchmark **Sen
    - **H3**: Pre-allocated Lookaside Lists prevent non-paged pool exhaustion across 50,000 stress I/O operations.
 
 ### Literature Grounding
-Mapped architecture against 22 peer-reviewed foundational papers across 5 pillars:
-- Static Binary Analysis & ML: Saxe & Berlin (2015), EMBER (2018), MalConv (2018), Kolbitsch et al. (2009), Aho-Corasick (1975).
-- Ransomware Interception & Resilient Filesystems: UNVEIL (2016), ShieldFS (2016), Gordian Knot (2015), Redemption (2017).
-- EDR & Provenance Graphs: SLEUTH (2017), HOLMES (2019), UNICORN (2020), ProGraPher (2023), CAPTAIN (2025).
-- Kernel Defense & Memory Integrity: Ether (2008), HookSafe (2009), CFI (2005), Cuckoo (2007).
-- IoT & Edge Defense: Mirai (2017), Kitsune (2018), FIRMADYNE (2016), angr (2016).
+Mapped architecture against 22 peer-reviewed foundational papers across 5 pillars (EMBER, ShieldFS, SLEUTH, Kitsune, MalConv, Aho-Corasick, etc.).
 
-### Next Steps
-- Establish initial experiment protocol for Hypothesis H1 (Benchmark scanning latency: baseline vs tiered cascade).
-- Implement benchmarking harness in `src/` and run Run 001.
+---
+
+## 2026-10-05 — Experiment H1 Execution & Validation (Run 001)
+
+### Protocol Pre-Registration
+Locked protocol for Hypothesis H1 in Git (`b7f3d44`).
+
+### Execution & Empirical Findings
+Benchmarked Baseline Monolithic Scanner vs. SentinelCore Tiered Cascade over 10,000 requests using real Windows System32 binaries and synthetic packed payloads:
+- **Baseline**: Mean = 31.51 ms, P50 = 7.18 ms, P90 = 160.01 ms, P99 = 202.05 ms, 1,701 Timeouts (> 50ms).
+- **SentinelCore**: Mean = 0.285 ms, P50 = 0.064 ms, P90 = 1.439 ms, P99 = 1.671 ms, **0 Timeouts**.
+- **Speedup**: **120.9x faster P99 latency**; 110.5x faster mean latency; 110.2x wall-clock execution speedup.
+- **Outcome**: Hypothesis H1 CONFIRMED / SUPPORTED.
+
+### Next Step
+Outer loop reflection cycle 1: Deepen into Hypothesis H2 (Ransomware Burst Detection vs Developer Workloads).
