@@ -1,0 +1,101 @@
+# Research State — Central Project Tracking
+# SentinelCore: Enterprise-Grade AI-Orchestrated Endpoint Detection & Security
+
+project:
+  title: "SentinelCore: Low-Latency Kernel-Filtered Endpoint Detection & Autonomous Heuristics"
+  question: "How can a multi-agent tiered endpoint architecture achieve sub-1.5ms pre-execution interception, sub-50MB RAM footprint, and zero false positives on developer workstations while intercepting 100% of zero-day ransomware bursts?"
+  status: active
+  started: "2026-10-05"
+  domain: "Systems Security, Kernel Interception, EDR Heuristics, Machine Learning Malware Classification"
+
+literature:
+  key_papers:
+    - id: "anderson2018ember"
+      title: "EMBER: An Open Dataset for Training Static PE Malware Machine Learning Models"
+      authors: "Anderson & Roth"
+      year: 2018
+      relevance: "Standardized 2,381-dimensional tabular feature extractor for PE static classification."
+    - id: "continella2016shieldfs"
+      title: "ShieldFS: A Self-Healing, Ransomware-Aware Filesystem"
+      authors: "Continella et al."
+      year: 2016
+      relevance: "Windows minifilter copy-on-write buffer model and write-entropy delta calculation."
+    - id: "kharraz2015gordian"
+      title: "Cutting the Gordian Knot: A Look Under the Hood of Ransomware Analysis"
+      authors: "Kharraz et al."
+      year: 2015
+      relevance: "Behavioral taxonomy of MFT enumeration, crypto API patterns, and burst write rates."
+    - id: "hossain2017sleuth"
+      title: "SLEUTH: Real-Time Reconstruction of Attacks on Audit Logs"
+      authors: "Hossain et al."
+      year: 2017
+      relevance: "Real-time causal tag propagation and dependency graph generation without state explosion."
+    - id: "mirsky2018kitsune"
+      title: "Kitsune: An Ensemble of Autoencoders for Online Network Intrusion Detection"
+      authors: "Mirsky et al."
+      year: 2018
+      relevance: "Damped 1D incremental statistics for streaming anomaly detection with negligible CPU/memory."
+    - id: "raff2018malconv"
+      title: "MalConv: A Deep Learning Architecture for Binary Malware Detection"
+      authors: "Raff et al."
+      year: 2018
+      relevance: "Raw-byte static evaluation capable of classifying packed or corrupted executables."
+    - id: "ahocorasick1975"
+      title: "Efficient String Matching: An Aid to Bibliographic Search"
+      authors: "Aho & Corasick"
+      year: 1975
+      relevance: "Linear-time multi-pattern DFA engine underpinning YARA-X rule execution."
+    - id: "wang2025captain"
+      title: "CAPTAIN: Towards Lightweight, Adaptive Provenance-Based Intrusion Detection"
+      authors: "Wang et al."
+      year: 2025
+      relevance: "Differentiable tag propagation cutting benign false alarms by 90% on developer workloads."
+  open_problems:
+    - "Pre-execution I/O delay: Full ML inference and deep signature scanning exceed the 1.5ms threshold on hot paths."
+    - "Developer workstation noise: High-velocity file creation and compiler binary generation trip generic ransomware heuristics."
+    - "Kernel pool memory exhaustion during IRP_MJ_CREATE storms."
+  evidence_gaps:
+    - "Empirical measurement of tiered filtering latency on Windows 11 under concurrent 10,000 I/O operations."
+    - "Quantitative differentiation between legitimate build pipelines (cargo, npm, clang) and ransomware encryption loops."
+
+hypotheses:
+  - id: H1
+    statement: "A three-tier evaluation cascade (Tier 1: RocksDB SHA-256 hash lookup <= 0.1ms; Tier 2: Shannon byte entropy + PE metadata heuristics <= 0.8ms; Tier 3: Asynchronous/deferred YARA-X scan) achieves <= 1.5ms P99 pre-execution decision latency on 99.5% of clean execution requests without triggering the 50ms kernel fail-open bypass."
+    status: active
+    motivation: "Preserving host system responsiveness while maintaining zero-day pre-execution blocking capabilities."
+    parent: null
+    priority: high
+
+  - id: H2
+    statement: "Coupling sliding-window file modification velocity with write-entropy delta and parent process lineage enables detection of zero-day ransomware bursts within <= 3 file writes while keeping false positives on high-throughput developer workloads (compilers, git, npm) to < 0.01%."
+    status: pending
+    motivation: "Solving the primary operational failure mode of modern heuristic EDRs on technical workstations."
+    parent: null
+    priority: high
+
+  - id: H3
+    statement: "Pre-allocated Lookaside Lists and fixed 8-byte aligned memory frames eliminate non-paged kernel pool allocations during IRP_MJ_CREATE storms, sustaining zero BSOD crashes and sub-2% CPU overhead across 50,000 stress operations."
+    status: pending
+    motivation: "Kernel memory safety and absolute operating system stability."
+    parent: null
+    priority: medium
+
+experiments:
+  proxy_metric: "P99 Interception Latency (ms) & Classification Accuracy (%)"
+  baseline_value: 14.8
+  best_value: null
+  total_runs: 0
+  trajectory: []
+
+outer_loop:
+  cycle: 0
+  last_direction: null
+  last_reflection: "Initial bootstrap from enterprise frameworks and systems security literature completed."
+
+workspace:
+  findings: "findings.md"
+  log: "research-log.md"
+  literature_dir: "literature/"
+  experiments_dir: "experiments/"
+  to_human_dir: "to_human/"
+  paper_dir: "paper/"
