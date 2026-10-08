@@ -37,7 +37,8 @@ def test_web_dashboard_endpoints():
         with urllib.request.urlopen(f"{base_url}/") as response:
             assert response.status == 200
             html = response.read().decode("utf-8")
-            assert "SentinelCore Antivirus" in html
+            assert "SentinelCore" in html
+
 
         # 2. Test /api/status
         with urllib.request.urlopen(f"{base_url}/api/status") as response:

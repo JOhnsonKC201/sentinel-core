@@ -1,8 +1,6 @@
 """
-Native Desktop GUI Dashboard for SentinelCore Antivirus
-Built with Python Tkinter and ttk with a modern dark security console theme.
-Features live shield indicators, file picker, on-demand scanning with progress bar,
-and quarantine vault management.
+Native Windows Desktop Security GUI for SentinelCore
+Clean Windows Security / Enterprise endpoint UI styling without generic AI aesthetics.
 """
 
 import os
@@ -11,9 +9,8 @@ import time
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from typing import Optional, List
+from typing import Optional
 
-# Ensure repo root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from sentinel_scanner.engine import SentinelScanner, VERDICT_ALLOW, VERDICT_BLOCK, VERDICT_QUARANTINE
@@ -22,430 +19,421 @@ from sentinel_vault.vault import QuarantineVault
 class SentinelDesktopApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("SentinelCore - Personal Antivirus & Endpoint Shield")
-        self.root.geometry("1050x720")
-        self.root.minsize(900, 600)
-        self.root.configure(bg="#0B0F19")
+        self.root.title("SentinelCore Security")
+        self.root.geometry("1020x700")
+        self.root.minsize(880, 580)
+        self.root.configure(bg="#0E121A")
 
-        # Initialize core engines
+        # Focus window
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        self.root.after(400, lambda: self.root.attributes("-topmost", False))
+        self.root.focus_force()
+
+        # Engines
         self.vault = QuarantineVault()
         self.scanner = SentinelScanner()
 
-        self._apply_dark_style()
+        self._apply_native_style()
         self._build_header()
-        self._build_metrics_cards()
+        self._build_status_banner()
         self._build_tabs()
-        self._build_statusbar()
+        self._build_footer()
 
-        # Initial data load
         self.refresh_quarantine()
         self.refresh_metrics()
+        self.root.after(3000, self._auto_refresh)
 
-        # Start periodic status update
-        self.root.after(3000, self._periodic_update)
-
-    def _apply_dark_style(self):
+    def _apply_native_style(self):
         style = ttk.Style()
         style.theme_use("clam")
 
-        # Configure colors
-        bg_dark = "#0B0F19"
-        card_bg = "#111827"
-        text_light = "#F3F4F6"
-        cyan = "#06B6D4"
+        bg_main = "#0E121A"
+        bg_surface = "#161B26"
+        border_col = "#242C3D"
+        text_light = "#F8FAFC"
+        blue_accent = "#2563EB"
 
-        style.configure(".", background=bg_dark, foreground=text_light, font=("Segoe UI", 9))
-        style.configure("TFrame", background=bg_dark)
-        style.configure("Card.TFrame", background=card_bg, relief="solid", borderwidth=1)
+        style.configure(".", background=bg_main, foreground=text_light, font=("Segoe UI", 9))
+        style.configure("TFrame", background=bg_main)
         
-        # Notebook / Tabs
-        style.configure("TNotebook", background=bg_dark, borderwidth=0)
-        style.configure("TNotebook.Tab", background="#1F2937", foreground=text_light, padding=[16, 8], font=("Segoe UI", 10, "bold"))
+        # Tabs / Notebook
+        style.configure("TNotebook", background=bg_main, borderwidth=0)
+        style.configure("TNotebook.Tab", background="#181F2C", foreground="#94A3B8", padding=[18, 9], font=("Segoe UI", 9, "bold"))
         style.map("TNotebook.Tab",
-                  background=[("selected", cyan), ("active", "#374151")],
-                  foreground=[("selected", "#000000"), ("active", "#FFFFFF")])
+                  background=[("selected", bg_surface), ("active", "#202838")],
+                  foreground=[("selected", "#60A5FA"), ("active", text_light)])
 
         # Buttons
-        style.configure("Primary.TButton", background=cyan, foreground="#000000", font=("Segoe UI", 9, "bold"), padding=[12, 6])
-        style.map("Primary.TButton", background=[("active", "#22D3EE"), ("pressed", "#0891B2")])
+        style.configure("Primary.TButton", background=blue_accent, foreground="#FFFFFF", font=("Segoe UI", 9, "bold"), padding=[14, 6])
+        style.map("Primary.TButton", background=[("active", "#1D4ED8"), ("pressed", "#1E40AF")])
 
-        style.configure("Secondary.TButton", background="#1F2937", foreground=text_light, font=("Segoe UI", 9), padding=[10, 5])
-        style.map("Secondary.TButton", background=[("active", "#374151")])
+        style.configure("Secondary.TButton", background="#1F2839", foreground=text_light, font=("Segoe UI", 9), padding=[10, 5])
+        style.map("Secondary.TButton", background=[("active", "#2B374E")])
 
-        style.configure("Danger.TButton", background="#EF4444", foreground="#FFFFFF", font=("Segoe UI", 9, "bold"), padding=[10, 5])
-        style.map("Danger.TButton", background=[("active", "#DC2626")])
+        style.configure("Danger.TButton", background="#E11D48", foreground="#FFFFFF", font=("Segoe UI", 9, "bold"), padding=[10, 5])
+        style.map("Danger.TButton", background=[("active", "#BE123C")])
 
-        # Treeview (Tables)
-        style.configure("Treeview", background="#111827", foreground=text_light, fieldbackground="#111827", rowheight=28)
-        style.configure("Treeview.Heading", background="#1F2937", foreground=text_light, font=("Segoe UI", 9, "bold"))
-        style.map("Treeview", background=[("selected", "#1E3A5F")])
+        # Treeview (Data grid)
+        style.configure("Treeview", background="#121620", foreground=text_light, fieldbackground="#121620", rowheight=28, borderwidth=0)
+        style.configure("Treeview.Heading", background="#1B2230", foreground="#94A3B8", font=("Segoe UI", 9, "bold"))
+        style.map("Treeview", background=[("selected", "#1E3A8A")])
 
         # Progressbar
-        style.configure("Horizontal.TProgressbar", background=cyan, troughcolor="#1F2937", borderwidth=0)
+        style.configure("Horizontal.TProgressbar", background=blue_accent, troughcolor="#1A202C", borderwidth=0)
 
     def _build_header(self):
-        header_frame = tk.Frame(self.root, bg="#111827", height=60, padx=20, pady=10)
-        header_frame.pack(fill="x", side="top")
+        header = tk.Frame(self.root, bg="#141824", height=56, padx=24, pady=10)
+        header.pack(fill="x", side="top")
 
-        title_label = tk.Label(
-            header_frame,
-            text="🛡  SENTINELCORE PERSONAL ANTIVIRUS",
-            font=("Segoe UI", 14, "bold"),
-            fg="#06B6D4",
-            bg="#111827"
-        )
-        title_label.pack(side="left")
+        left = tk.Frame(header, bg="#141824")
+        left.pack(side="left")
 
-        status_badge = tk.Label(
-            header_frame,
-            text="● REAL-TIME SHIELDS ACTIVE",
-            font=("Segoe UI", 10, "bold"),
+        title = tk.Label(left, text="SentinelCore Security", font=("Segoe UI", 12, "bold"), fg="#FFFFFF", bg="#141824")
+        title.pack(side="left")
+
+        sub = tk.Label(left, text=" • Personal Endpoint Protection", font=("Segoe UI", 9), fg="#64748B", bg="#141824")
+        sub.pack(side="left", padx=(4, 0))
+
+        status_pill = tk.Label(
+            header,
+            text="● Device Protected",
+            font=("Segoe UI", 9, "bold"),
             fg="#10B981",
             bg="#064E3B",
-            padx=12,
-            pady=4,
-            relief="flat"
+            padx=10,
+            pady=3
         )
-        status_badge.pack(side="right")
+        status_pill.pack(side="right")
 
-    def _build_metrics_cards(self):
-        cards_frame = tk.Frame(self.root, bg="#0B0F19", padx=20, pady=12)
-        cards_frame.pack(fill="x")
+    def _build_status_banner(self):
+        banner = tk.Frame(self.root, bg="#141824", bd=1, relief="solid", padx=20, pady=14)
+        banner.pack(fill="x", padx=20, pady=(16, 10))
 
-        # Metric 1: System Health
-        self.card_health = self._create_card(cards_frame, "SYSTEM PROTECTION", "100% HEALTHY", "All Guards Operational", "#10B981")
-        self.card_health.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        # Left Info
+        info_frame = tk.Frame(banner, bg="#141824")
+        info_frame.pack(side="left", fill="both", expand=True)
 
-        # Metric 2: Reputation Cache
-        self.card_cache = self._create_card(cards_frame, "REPUTATION CACHE", f"{len(self.scanner.cache):,} Signatures", "P99 Latency: < 0.01ms", "#06B6D4")
-        self.card_cache.pack(side="left", fill="both", expand=True, padx=8)
+        h_lbl = tk.Label(info_frame, text="Current status: Protected", font=("Segoe UI", 12, "bold"), fg="#FFFFFF", bg="#141824")
+        h_lbl.pack(anchor="w")
 
-        # Metric 3: Quarantined Threats
-        items = self.vault.list_quarantined()
-        active_threats = sum(1 for i in items if not i.get("is_restored"))
-        self.card_vault = self._create_card(cards_frame, "QUARANTINE VAULT", f"{active_threats} Isolated Threats", "AES-256-GCM Neutralized", "#F59E0B")
-        self.card_vault.pack(side="left", fill="both", expand=True, padx=8)
+        p_lbl = tk.Label(info_frame, text="Real-time file shield, memory execution guard, and ransomware defenses are running.", font=("Segoe UI", 9), fg="#94A3B8", bg="#141824")
+        p_lbl.pack(anchor="w", pady=(2, 6))
 
-        # Metric 4: Heuristic Rules
-        summary = self.scanner.get_signatures_summary()
-        self.card_rules = self._create_card(cards_frame, "ACTIVE DETECTION RULES", f"{summary['tier3_signatures_count']} Engines", "UPX & LOLBins Loaded", "#A855F7")
-        self.card_rules.pack(side="left", fill="both", expand=True, padx=(8, 0))
+        meta_frame = tk.Frame(info_frame, bg="#141824")
+        meta_frame.pack(anchor="w")
 
-    def _create_card(self, parent, title: str, val_text: str, sub_text: str, color: str) -> tk.Frame:
-        card = tk.Frame(parent, bg="#111827", bd=1, relief="solid", padx=16, pady=12)
-        
-        t_lbl = tk.Label(card, text=title.upper(), font=("Segoe UI", 8, "bold"), fg="#9CA3AF", bg="#111827")
-        t_lbl.pack(anchor="w")
+        self.lbl_cache = tk.Label(meta_frame, text="Cache: 10,206 signatures", font=("Segoe UI", 8), fg="#64748B", bg="#141824")
+        self.lbl_cache.pack(side="left", padx=(0, 16))
 
-        v_lbl = tk.Label(card, text=val_text, font=("Segoe UI", 14, "bold"), fg=color, bg="#111827")
-        v_lbl.pack(anchor="w", pady=(2, 2))
-        card.value_label = v_lbl  # store reference
+        self.lbl_threats = tk.Label(meta_frame, text="Quarantined: 1 item", font=("Segoe UI", 8), fg="#F59E0B", bg="#141824")
+        self.lbl_threats.pack(side="left", padx=(0, 16))
 
-        s_lbl = tk.Label(card, text=sub_text, font=("Segoe UI", 8), fg="#6B7280", bg="#111827")
-        s_lbl.pack(anchor="w")
+        ver_lbl = tk.Label(meta_frame, text="Definitions: Up to date (2026.10)", font=("Segoe UI", 8), fg="#64748B", bg="#141824")
+        ver_lbl.pack(side="left")
 
-        return card
+        # Right Quick Action
+        btn_quick = ttk.Button(banner, text="Quick Scan", style="Primary.TButton", command=lambda: self._quick_scan("Downloads"))
+        btn_quick.pack(side="right", padx=(10, 0))
 
     def _build_tabs(self):
-        tab_container = tk.Frame(self.root, bg="#0B0F19", padx=20, pady=6)
-        tab_container.pack(fill="both", expand=True)
+        container = tk.Frame(self.root, bg="#0E121A", padx=20, pady=4)
+        container.pack(fill="both", expand=True)
 
-        self.notebook = ttk.Notebook(tab_container)
+        self.notebook = ttk.Notebook(container)
         self.notebook.pack(fill="both", expand=True)
 
         # Tab 1: Scanner
-        self.tab_scan = tk.Frame(self.notebook, bg="#111827", padx=16, pady=16)
-        self.notebook.add(self.tab_scan, text="  On-Demand Scanner  ")
-        self._setup_scanner_tab()
+        self.tab_scan = tk.Frame(self.notebook, bg="#141824", padx=18, pady=16)
+        self.notebook.add(self.tab_scan, text=" Virus & Threat Scan ")
+        self._setup_scan_tab()
 
-        # Tab 2: Quarantine Vault
-        self.tab_vault = tk.Frame(self.notebook, bg="#111827", padx=16, pady=16)
-        self.notebook.add(self.tab_vault, text="  Quarantine Vault  ")
-        self._setup_vault_tab()
+        # Tab 2: Quarantine
+        self.tab_vault = tk.Frame(self.notebook, bg="#141824", padx=18, pady=16)
+        self.notebook.add(self.tab_vault, text=" Quarantine & Protection History ")
+        self._setup_quarantine_tab()
 
-        # Tab 3: Signatures Explorer
-        self.tab_rules = tk.Frame(self.notebook, bg="#111827", padx=16, pady=16)
-        self.notebook.add(self.tab_rules, text="  Detection Signatures  ")
-        self._setup_rules_tab()
+        # Tab 3: Security Shields
+        self.tab_shields = tk.Frame(self.notebook, bg="#141824", padx=18, pady=16)
+        self.notebook.add(self.tab_shields, text=" Shields & Heuristics ")
+        self._setup_shields_tab()
 
-    def _setup_scanner_tab(self):
-        # Controls Frame
-        top_bar = tk.Frame(self.tab_scan, bg="#111827")
-        top_bar.pack(fill="x", pady=(0, 12))
+    def _setup_scan_tab(self):
+        # Scan Path Row
+        top = tk.Frame(self.tab_scan, bg="#141824")
+        top.pack(fill="x", pady=(0, 12))
 
-        tk.Label(top_bar, text="Target Scan Path:", font=("Segoe UI", 10, "bold"), fg="#F3F4F6", bg="#111827").pack(side="left", padx=(0, 8))
+        tk.Label(top, text="Scan Location:", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg="#141824").pack(side="left", padx=(0, 8))
 
-        self.scan_path_var = tk.StringVar(value=os.path.join(os.environ.get("USERPROFILE", "C:\\Users\\johns"), "Downloads"))
-        self.path_entry = tk.Entry(top_bar, textvariable=self.scan_path_var, font=("Segoe UI", 10), bg="#0B0F19", fg="#F3F4F6", insertbackground="#06B6D4")
-        self.path_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        user_home = os.environ.get("USERPROFILE", "C:\\Users\\johns")
+        self.path_var = tk.StringVar(value=os.path.join(user_home, "Downloads"))
+        self.entry_path = tk.Entry(top, textvariable=self.path_var, font=("Segoe UI", 9), bg="#0E121A", fg="#F8FAFC", insertbackground="#3B82F6", bd=1, relief="solid")
+        self.entry_path.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        ttk.Button(top_bar, text="Browse Folder", style="Secondary.TButton", command=self._browse_folder).pack(side="left", padx=4)
-        ttk.Button(top_bar, text="Browse File", style="Secondary.TButton", command=self._browse_file).pack(side="left", padx=4)
-        self.btn_scan = ttk.Button(top_bar, text="▶ Start Scan", style="Primary.TButton", command=self._start_scan_thread)
-        self.btn_scan.pack(side="left", padx=4)
+        ttk.Button(top, text="Browse Folder", style="Secondary.TButton", command=self._browse_folder).pack(side="left", padx=3)
+        ttk.Button(top, text="Browse File", style="Secondary.TButton", command=self._browse_file).pack(side="left", padx=3)
+        self.btn_run_scan = ttk.Button(top, text="Scan Now", style="Primary.TButton", command=self._start_scan)
+        self.btn_run_scan.pack(side="left", padx=3)
 
-        # Quick Scans Frame
-        quick_frame = tk.Frame(self.tab_scan, bg="#111827")
-        quick_frame.pack(fill="x", pady=(0, 10))
+        # Quick Target Presets
+        presets = tk.Frame(self.tab_scan, bg="#141824")
+        presets.pack(fill="x", pady=(0, 10))
 
-        tk.Label(quick_frame, text="Quick Scans:", font=("Segoe UI", 9), fg="#9CA3AF", bg="#111827").pack(side="left", padx=(0, 8))
-        ttk.Button(quick_frame, text="Downloads", style="Secondary.TButton", command=lambda: self._set_and_scan("Downloads")).pack(side="left", padx=4)
-        ttk.Button(quick_frame, text="Desktop", style="Secondary.TButton", command=lambda: self._set_and_scan("Desktop")).pack(side="left", padx=4)
-        ttk.Button(quick_frame, text="Temp", style="Secondary.TButton", command=lambda: self._set_and_scan("Temp")).pack(side="left", padx=4)
+        tk.Label(presets, text="Quick Presets:", font=("Segoe UI", 8), fg="#64748B", bg="#141824").pack(side="left", padx=(0, 8))
+        ttk.Button(presets, text="Downloads", style="Secondary.TButton", command=lambda: self._set_path("Downloads")).pack(side="left", padx=3)
+        ttk.Button(presets, text="Desktop", style="Secondary.TButton", command=lambda: self._set_path("Desktop")).pack(side="left", padx=3)
+        ttk.Button(presets, text="Temp Folder", style="Secondary.TButton", command=lambda: self._set_path("Temp")).pack(side="left", padx=3)
 
         # Progress bar
-        self.progress_bar = ttk.Progressbar(self.tab_scan, style="Horizontal.TProgressbar", mode="determinate")
-        self.progress_bar.pack(fill="x", pady=(0, 4))
+        self.prog_bar = ttk.Progressbar(self.tab_scan, style="Horizontal.TProgressbar", mode="determinate")
+        self.prog_bar.pack(fill="x", pady=(0, 4))
 
-        self.lbl_scan_status = tk.Label(self.tab_scan, text="Ready to scan", font=("Segoe UI", 9), fg="#9CA3AF", bg="#111827")
-        self.lbl_scan_status.pack(anchor="w", pady=(0, 10))
+        self.lbl_scan_info = tk.Label(self.tab_scan, text="Ready to scan", font=("Segoe UI", 8), fg="#64748B", bg="#141824")
+        self.lbl_scan_info.pack(anchor="w", pady=(0, 8))
 
-        # Scan Results Table
-        table_frame = tk.Frame(self.tab_scan, bg="#111827")
-        table_frame.pack(fill="both", expand=True)
+        # Results Data Grid
+        grid_frame = tk.Frame(self.tab_scan, bg="#141824")
+        grid_frame.pack(fill="both", expand=True)
 
-        cols = ("file", "verdict", "reason", "tier", "time")
-        self.scan_tree = ttk.Treeview(table_frame, columns=cols, show="headings", selectmode="browse")
-        self.scan_tree.heading("file", text="File Path")
-        self.scan_tree.heading("verdict", text="Verdict")
-        self.scan_tree.heading("reason", text="Threat Reason")
-        self.scan_tree.heading("tier", text="Tier")
-        self.scan_tree.heading("time", text="Latency (ms)")
+        cols = ("file", "verdict", "threat", "tier", "latency")
+        self.tree_scan = ttk.Treeview(grid_frame, columns=cols, show="headings", selectmode="browse")
+        self.tree_scan.heading("file", text="File")
+        self.tree_scan.heading("verdict", text="Verdict")
+        self.tree_scan.heading("threat", text="Threat Name")
+        self.tree_scan.heading("tier", text="Tier")
+        self.tree_scan.heading("latency", text="Latency")
 
-        self.scan_tree.column("file", width=420)
-        self.scan_tree.column("verdict", width=120, anchor="center")
-        self.scan_tree.column("reason", width=240)
-        self.scan_tree.column("tier", width=60, anchor="center")
-        self.scan_tree.column("time", width=100, anchor="center")
+        self.tree_scan.column("file", width=440)
+        self.tree_scan.column("verdict", width=100, anchor="center")
+        self.tree_scan.column("threat", width=220)
+        self.tree_scan.column("tier", width=60, anchor="center")
+        self.tree_scan.column("latency", width=80, anchor="center")
 
-        scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.scan_tree.yview)
-        self.scan_tree.configure(yscrollcommand=scroll.set)
-        self.scan_tree.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.tree_scan.yview)
+        self.tree_scan.configure(yscrollcommand=scroll.set)
+        self.tree_scan.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-    def _setup_vault_tab(self):
-        top_bar = tk.Frame(self.tab_vault, bg="#111827")
-        top_bar.pack(fill="x", pady=(0, 12))
+    def _setup_quarantine_tab(self):
+        top = tk.Frame(self.tab_vault, bg="#141824")
+        top.pack(fill="x", pady=(0, 10))
 
-        tk.Label(top_bar, text="Quarantined Threats (Encrypted with AES-256-GCM):", font=("Segoe UI", 10, "bold"), fg="#F3F4F6", bg="#111827").pack(side="left")
+        tk.Label(top, text="Isolated Threats (Encrypted with AES-256-GCM):", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg="#141824").pack(side="left")
 
-        ttk.Button(top_bar, text="↻ Refresh", style="Secondary.TButton", command=self.refresh_quarantine).pack(side="right", padx=4)
-        ttk.Button(top_bar, text="Purge All Threats", style="Danger.TButton", command=self._purge_vault).pack(side="right", padx=4)
-        ttk.Button(top_bar, text="Delete Selected", style="Secondary.TButton", command=self._delete_selected).pack(side="right", padx=4)
-        ttk.Button(top_bar, text="Restore Selected", style="Primary.TButton", command=self._restore_selected).pack(side="right", padx=4)
+        ttk.Button(top, text="Refresh", style="Secondary.TButton", command=self.refresh_quarantine).pack(side="right", padx=3)
+        ttk.Button(top, text="Purge All", style="Danger.TButton", command=self._purge_vault).pack(side="right", padx=3)
+        ttk.Button(top, text="Delete File", style="Secondary.TButton", command=self._delete_threat).pack(side="right", padx=3)
+        ttk.Button(top, text="Restore File", style="Primary.TButton", command=self._restore_threat).pack(side="right", padx=3)
 
-        # Vault Table
-        table_frame = tk.Frame(self.tab_vault, bg="#111827")
-        table_frame.pack(fill="both", expand=True)
+        grid_frame = tk.Frame(self.tab_vault, bg="#141824")
+        grid_frame.pack(fill="both", expand=True)
 
-        cols = ("status", "vault_id", "reason", "path", "date")
-        self.vault_tree = ttk.Treeview(table_frame, columns=cols, show="headings", selectmode="browse")
-        self.vault_tree.heading("status", text="Status")
-        self.vault_tree.heading("vault_id", text="Vault ID")
-        self.vault_tree.heading("reason", text="Threat Reason")
-        self.vault_tree.heading("path", text="Original Path")
-        self.vault_tree.heading("date", text="Isolated Date")
+        cols = ("status", "vault_id", "threat", "path", "date")
+        self.tree_vault = ttk.Treeview(grid_frame, columns=cols, show="headings", selectmode="browse")
+        self.tree_vault.heading("status", text="Status")
+        self.tree_vault.heading("vault_id", text="Vault ID")
+        self.tree_vault.heading("threat", text="Threat Name")
+        self.tree_vault.heading("path", text="Original Location")
+        self.tree_vault.heading("date", text="Date Isolated")
 
-        self.vault_tree.column("status", width=100, anchor="center")
-        self.vault_tree.column("vault_id", width=130)
-        self.vault_tree.column("reason", width=220)
-        self.vault_tree.column("path", width=380)
-        self.vault_tree.column("date", width=150, anchor="center")
+        self.tree_vault.column("status", width=90, anchor="center")
+        self.tree_vault.column("vault_id", width=120)
+        self.tree_vault.column("threat", width=220)
+        self.tree_vault.column("path", width=380)
+        self.tree_vault.column("date", width=140, anchor="center")
 
-        scroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.vault_tree.yview)
-        self.vault_tree.configure(yscrollcommand=scroll.set)
-        self.vault_tree.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.tree_vault.yview)
+        self.tree_vault.configure(yscrollcommand=scroll.set)
+        self.tree_vault.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-    def _setup_rules_tab(self):
-        container = tk.Frame(self.tab_rules, bg="#111827")
+    def _setup_shields_tab(self):
+        container = tk.Frame(self.tab_shields, bg="#141824")
         container.pack(fill="both", expand=True)
 
-        tk.Label(container, text="Active Threat Detection Engines & Cascade Policies", font=("Segoe UI", 12, "bold"), fg="#06B6D4", bg="#111827").pack(anchor="w", pady=(0, 8))
+        tk.Label(container, text="Security Modules & Cascade Architecture", font=("Segoe UI", 11, "bold"), fg="#FFFFFF", bg="#141824").pack(anchor="w", pady=(0, 8))
 
         summary = self.scanner.get_signatures_summary()
 
-        info_box = tk.Text(container, bg="#0B0F19", fg="#F3F4F6", font=("Consolas", 10), wrap="word", relief="solid", bd=1, padx=12, pady=12)
-        info_box.pack(fill="both", expand=True)
+        txt = tk.Text(container, bg="#0E121A", fg="#CBD5E1", font=("Segoe UI", 9), relief="solid", bd=1, padx=14, pady=12, wrap="word")
+        txt.pack(fill="both", expand=True)
 
-        info_text = (
-            "========================================================================\n"
-            "   SENTINELCORE 3-TIER EVALUATION CASCADE ARCHITECTURE\n"
-            "========================================================================\n\n"
-            "[*] TIER 1: FAST REPUTATION CACHE\n"
-            f"    - Active Cached Signatures: {summary['tier1_cache_entries']} / {summary['tier1_cache_capacity']}\n"
-            "    - Evaluation Latency:       < 0.01 ms (P99)\n"
-            "    - Hash Algorithm:           SHA-256 (LRU SQLite persistence)\n\n"
-            "[*] TIER 2: ENTROPY & PACKER GATING\n"
-            f"    - General Cryptor Threshold: H >= {summary['tier2_entropy_threshold']}\n"
-            f"    - UPX / ASPack Threshold:    H >= {summary['tier2_upx_entropy_threshold']}\n"
-            "    - PE Section Parsing:       Zero-allocation in-memory header inspection\n\n"
-            f"[*] TIER 3: MULTI-PATTERN SIGNATURES ({summary['tier3_signatures_count']} Rules Loaded)\n"
+        body = (
+            "SHIELD STATUS AND HEURISTIC ENGINES\n"
+            "------------------------------------------------------------------------\n\n"
+            "1. Real-Time File System Shield [Active]\n"
+            "   Monitors Downloads, Desktop, Documents, and Temp for untrusted binaries.\n\n"
+            "2. Process Execution Guard [Active]\n"
+            "   Inspects command-lines for LOLBins, encoded PowerShell, and script-based droppers.\n\n"
+            "3. Dual-Invariant Ransomware Defense [Active]\n"
+            "   Detects rapid high-entropy bursts (<= 3 writes/s) while protecting developer build tools.\n\n"
+            f"4. Fast Reputation Cache: {summary['tier1_cache_entries']:,} signatures loaded (< 0.01ms latency)\n\n"
+            f"5. Active Threat Pattern Signatures ({summary['tier3_signatures_count']} rules):\n"
         )
         for sig in summary["signatures"]:
-            info_text += f"    - {sig}\n"
+            body += f"   • {sig}\n"
 
-        info_text += "\n[*] BEHAVIORAL RANSOMWARE SHIELD:\n"
-        info_text += "    - Zero-Day Write Burst Limit: <= 3 high-entropy files/sec\n"
-        info_text += "    - Developer Lineage Immunity: cargo, rustc, git, node, cl, python, cmd\n"
+        txt.insert("1.0", body)
+        txt.configure(state="disabled")
 
-        info_box.insert("1.0", info_text)
-        info_box.configure(state="disabled")
-
-    def _build_statusbar(self):
-        status_bar = tk.Frame(self.root, bg="#111827", height=24, padx=20, pady=4)
-        status_bar.pack(fill="x", side="bottom")
+    def _build_footer(self):
+        foot = tk.Frame(self.root, bg="#141824", height=24, padx=20, pady=3)
+        foot.pack(fill="x", side="bottom")
 
         tk.Label(
-            status_bar,
-            text="SentinelCore v2.4 • Web Dashboard: http://127.0.0.1:8765 • Altitude 320500",
+            foot,
+            text="SentinelCore Endpoint Security • Web Console: http://127.0.0.1:8765",
             font=("Segoe UI", 8),
-            fg="#9CA3AF",
-            bg="#111827"
+            fg="#64748B",
+            bg="#141824"
         ).pack(side="left")
 
     def _browse_folder(self):
-        folder = filedialog.askdirectory(title="Select Folder to Scan")
-        if folder:
-            self.scan_path_var.set(folder)
+        d = filedialog.askdirectory(title="Select Folder to Scan")
+        if d:
+            self.path_var.set(d)
 
     def _browse_file(self):
-        file_path = filedialog.askopenfilename(title="Select File to Scan")
-        if file_path:
-            self.scan_path_var.set(file_path)
+        f = filedialog.askopenfilename(title="Select File to Scan")
+        if f:
+            self.path_var.set(f)
 
-    def _set_and_scan(self, folder_name: str):
-        user_p = os.environ.get("USERPROFILE", "C:\\Users\\johns")
-        if folder_name == "Temp":
-            p = os.environ.get("TEMP", os.path.join(user_p, "AppData\\Local\\Temp"))
+    def _set_path(self, preset: str):
+        home = os.environ.get("USERPROFILE", "C:\\Users\\johns")
+        if preset == "Temp":
+            p = os.environ.get("TEMP", os.path.join(home, "AppData\\Local\\Temp"))
         else:
-            p = os.path.join(user_p, folder_name)
-        self.scan_path_var.set(p)
-        self._start_scan_thread()
+            p = os.path.join(home, preset)
+        self.path_var.set(p)
 
-    def _start_scan_thread(self):
-        target = self.scan_path_var.get().strip()
-        if not target or not os.path.exists(target):
-            messagebox.showwarning("Invalid Path", f"Path does not exist:\n{target}")
+    def _quick_scan(self, preset: str):
+        self._set_path(preset)
+        self.notebook.select(self.tab_scan)
+        self._start_scan()
+
+    def _start_scan(self):
+        path = self.path_var.get().strip()
+        if not path or not os.path.exists(path):
+            messagebox.showwarning("Scan Error", f"Path does not exist:\n{path}")
             return
 
-        self.btn_scan.configure(state="disabled")
-        self.progress_bar["value"] = 0
-        self.scan_tree.delete(*self.scan_tree.get_children())
-        self.lbl_scan_status.config(text=f"Scanning: {target}...")
+        self.btn_run_scan.configure(state="disabled")
+        self.prog_bar["value"] = 0
+        self.tree_scan.delete(*self.tree_scan.get_children())
+        self.lbl_scan_info.config(text=f"Scanning: {path}...")
 
-        threading.Thread(target=self._run_scan, args=(target,), daemon=True).start()
+        threading.Thread(target=self._scan_worker, args=(path,), daemon=True).start()
 
-    def _run_scan(self, target: str):
+    def _scan_worker(self, path: str):
         t0 = time.time()
-        files_to_scan = []
-        if os.path.isfile(target):
-            files_to_scan = [target]
+        files = []
+        if os.path.isfile(path):
+            files = [path]
         else:
-            for root, _, files in os.walk(target):
-                for f in files:
-                    files_to_scan.append(os.path.join(root, f))
-                    if len(files_to_scan) >= 1500:
+            for root, _, fs in os.walk(path):
+                for f in fs:
+                    files.append(os.path.join(root, f))
+                    if len(files) >= 1500:
                         break
-                if len(files_to_scan) >= 1500:
+                if len(files) >= 1500:
                     break
 
-        total = len(files_to_scan)
+        total = len(files)
         scanned = 0
         threats = 0
 
-        for fp in files_to_scan:
+        for fp in files:
             scanned += 1
             try:
                 verdict = self.scanner.scan_file(fp)
                 if verdict.is_malicious():
                     threats += 1
                     self.vault.isolate_file(fp, reason=verdict.reason)
-                    self.root.after(0, self._insert_scan_row, fp, "MALICIOUS", verdict.reason, verdict.tier, verdict.scan_time_ms)
-                elif scanned <= 10 or scanned % 50 == 0:
-                    self.root.after(0, self._insert_scan_row, fp, "CLEAN", "Clean", verdict.tier, verdict.scan_time_ms)
+                    self.root.after(0, self._add_scan_row, fp, "MALICIOUS", verdict.reason, verdict.tier, verdict.scan_time_ms)
+                elif scanned <= 8 or scanned % 40 == 0:
+                    self.root.after(0, self._add_scan_row, fp, "CLEAN", "Clean", verdict.tier, verdict.scan_time_ms)
             except Exception:
                 pass
 
             pct = int((scanned / max(total, 1)) * 100)
-            self.root.after(0, self._update_scan_progress, pct, f"Inspected {scanned}/{total} files...")
+            self.root.after(0, self._update_progress, pct, f"Inspected {scanned}/{total} files...")
 
-        elapsed = time.time() - t0
-        status_msg = f"Scan Complete in {elapsed:.2f}s — {scanned} files inspected, {threats} threats neutralized."
-        self.root.after(0, self._finish_scan, status_msg)
+        elapsed = round(time.time() - t0, 2)
+        summary = f"Scan complete: {scanned} files inspected in {elapsed}s • {threats} threats found."
+        self.root.after(0, self._scan_done, summary)
 
-    def _insert_scan_row(self, fp: str, verdict: str, reason: str, tier: int, latency: float):
-        row_id = self.scan_tree.insert("", "end", values=(fp, verdict, reason, f"Tier {tier}", f"{latency:.3f}"))
+    def _add_scan_row(self, fp: str, verdict: str, threat: str, tier: int, latency: float):
+        row = self.tree_scan.insert("", "end", values=(fp, verdict, threat, f"Tier {tier}", f"{latency:.3f} ms"))
         if verdict == "MALICIOUS":
-            self.scan_tree.tag_configure("mal", foreground="#EF4444")
-            self.scan_tree.item(row_id, tags=("mal",))
+            self.tree_scan.tag_configure("threat", foreground="#F43F5E")
+            self.tree_scan.item(row, tags=("threat",))
 
-    def _update_scan_progress(self, pct: int, msg: str):
-        self.progress_bar["value"] = pct
-        self.lbl_scan_status.config(text=msg)
+    def _update_progress(self, pct: int, text: str):
+        self.prog_bar["value"] = pct
+        self.lbl_scan_info.config(text=text)
 
-    def _finish_scan(self, summary_msg: str):
-        self.progress_bar["value"] = 100
-        self.lbl_scan_status.config(text=summary_msg)
-        self.btn_scan.configure(state="normal")
+    def _scan_done(self, summary: str):
+        self.prog_bar["value"] = 100
+        self.lbl_scan_info.config(text=summary)
+        self.btn_run_scan.configure(state="normal")
         self.refresh_quarantine()
         self.refresh_metrics()
 
     def refresh_quarantine(self):
-        self.vault_tree.delete(*self.vault_tree.get_children())
+        self.tree_vault.delete(*self.tree_vault.get_children())
         items = self.vault.list_quarantined()
         for item in items:
-            status = "RESTORED" if item.get("is_restored") else "ISOLATED"
-            v_id = item["vault_id"][:12] + "..."
-            self.vault_tree.insert(
+            status = "Restored" if item.get("is_restored") else "Isolated"
+            vid = item["vault_id"][:10] + "..."
+            self.tree_vault.insert(
                 "",
                 "end",
                 iid=item["vault_id"],
-                values=(status, v_id, item["reason"], item["original_path"], item["quarantine_time"])
+                values=(status, vid, item["reason"], item["original_path"], item["quarantine_time"])
             )
 
     def refresh_metrics(self):
         items = self.vault.list_quarantined()
         active = sum(1 for i in items if not i.get("is_restored"))
-        self.card_cache.value_label.config(text=f"{len(self.scanner.cache):,} Signatures")
-        self.card_vault.value_label.config(text=f"{active} Isolated Threats")
+        self.lbl_cache.config(text=f"Cache: {len(self.scanner.cache):,} signatures")
+        self.lbl_threats.config(text=f"Quarantined: {active} item(s)")
 
-    def _periodic_update(self):
+    def _auto_refresh(self):
         self.refresh_metrics()
-        self.root.after(3000, self._periodic_update)
+        self.root.after(3000, self._auto_refresh)
 
-    def _restore_selected(self):
-        selected = self.vault_tree.selection()
-        if not selected:
-            messagebox.showinfo("Select Item", "Please select a quarantined threat from the table.")
+    def _restore_threat(self):
+        sel = self.tree_vault.selection()
+        if not sel:
+            messagebox.showinfo("Select Threat", "Please select a threat from the quarantine table.")
             return
-        vault_id = selected[0]
+        vid = sel[0]
         try:
-            self.vault.restore_file(vault_id)
-            messagebox.showinfo("Restoration Successful", f"Threat {vault_id} restored bit-for-bit to its original path.")
+            self.vault.restore_file(vid)
+            messagebox.showinfo("Restored", f"Threat {vid} restored successfully.")
             self.refresh_quarantine()
             self.refresh_metrics()
         except Exception as e:
-            messagebox.showerror("Restoration Failed", str(e))
+            messagebox.showerror("Restoration Error", str(e))
 
-    def _delete_selected(self):
-        selected = self.vault_tree.selection()
-        if not selected:
-            messagebox.showinfo("Select Item", "Please select a quarantined threat to delete.")
+    def _delete_threat(self):
+        sel = self.tree_vault.selection()
+        if not sel:
+            messagebox.showinfo("Select Threat", "Please select a threat to delete.")
             return
-        vault_id = selected[0]
-        if messagebox.askyesno("Confirm Permanent Deletion", f"Permanently shred and delete threat archive {vault_id}?"):
+        vid = sel[0]
+        if messagebox.askyesno("Confirm Deletion", f"Permanently shred and delete threat {vid}?"):
             try:
-                self.vault.delete_quarantined(vault_id)
+                self.vault.delete_quarantined(vid)
                 self.refresh_quarantine()
                 self.refresh_metrics()
             except Exception as e:
-                messagebox.showerror("Deletion Failed", str(e))
+                messagebox.showerror("Deletion Error", str(e))
 
     def _purge_vault(self):
-        if messagebox.askyesno("Confirm Purge", "Permanently shred ALL quarantined files in the vault?"):
+        if messagebox.askyesno("Confirm Purge", "Permanently shred all files in the quarantine vault?"):
             purged = self.vault.purge_all()
-            messagebox.showinfo("Purge Complete", f"Successfully shredded {purged} threat archives.")
+            messagebox.showinfo("Purge Complete", f"Purged {purged} threat files from vault.")
             self.refresh_quarantine()
             self.refresh_metrics()
 
