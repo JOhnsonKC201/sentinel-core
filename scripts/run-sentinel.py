@@ -19,6 +19,7 @@ from sentinel_guard.watcher import FilesystemWatcher
 from sentinel_guard.process_monitor import ProcessMonitor
 from sentinel_ui.notifications import notify_threat_blocked
 from sentinel_ui.dashboard import SentinelConsole
+from sentinel_ui.web_dashboard import SentinelWebServer
 
 def alert_handler(file_path: str, verdict: ScanVerdict, vault_id: str):
     notify_threat_blocked(
@@ -45,6 +46,8 @@ def main():
     parser = argparse.ArgumentParser(description="SentinelCore Personal Antivirus & Malware Prevention Suite")
     parser.add_argument("--scan", type=str, help="Run an on-demand scan on a specific file or folder")
     parser.add_argument("--daemon", action="store_true", help="Run headlessly as background guard")
+    parser.add_argument("--web", action="store_true", help="Launch interactive web management dashboard in browser")
+    parser.add_argument("--port", type=int, default=8765, help="Port for web dashboard (default: 8765)")
     args = parser.parse_args()
 
     # 1. Initialize Core Engines
@@ -78,26 +81,40 @@ def main():
         on_process_blocked=process_blocked_handler
     )
 
-    # 4. Start Background Real-Time Protection
+    # 4. Initialize Web Dashboard Server
+    web_server = SentinelWebServer(
+        scanner=scanner,
+        vault=vault,
+        fs_watcher=fs_watcher,
+        proc_monitor=proc_monitor,
+        ransomware_shield=ransomware_shield,
+        port=args.port
+    )
+
+    # 5. Start Background Real-Time Protection
     console.print_banner()
-    print("[+] Starting Real-Time Filesystem Guard (Downloads, Desktop, Documents)...")
+    print("[+] Starting Real-Time Filesystem Guard (Downloads, Desktop, Documents, Temp)...", flush=True)
     fs_watcher.start()
 
-    print("[+] Starting Process Execution & Memory Guard...")
+    print("[+] Starting Process Execution & Memory Guard...", flush=True)
     proc_monitor.start()
 
-    print("[+] Starting Dual-Invariant Ransomware Shield...")
+    print("[+] Starting Dual-Invariant Ransomware Shield...", flush=True)
     console.print_status(is_guard_active=True)
 
+    # Start Web Dashboard
+    web_server.start(open_browser=args.web)
+
     if args.daemon:
-        print("[*] Running in headless daemon mode. Press Ctrl+C to terminate.")
+        print("[*] Running in headless daemon mode. Web UI active. Press Ctrl+C to terminate.", flush=True)
         try:
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print("\n[*] Stopping SentinelCore shields...")
+            print("\n[*] Stopping SentinelCore shields...", flush=True)
             fs_watcher.stop()
             proc_monitor.stop()
+            web_server.stop()
             return
 
     # Interactive Console Loop
@@ -106,7 +123,13 @@ def main():
     print("  status               - Display active shield and cache metrics")
     print("  quarantine           - List neutralized files in the encrypted vault")
     print("  restore <vault_id>   - Restore a false positive to original path")
-    print("  exit                 - Stop shields and exit\n")
+    print("  delete <vault_id>    - Permanently shred and delete threat from vault")
+    print("  purge                - Permanently shred all quarantined threats")
+    print("  stats                - Display vault and detection metrics")
+    print("  signatures           - List active threat signature rules")
+    print("  events               - Display recent security telemetry event log")
+    print("  web                  - Open Web Management Dashboard in default browser")
+    print("  exit                 - Stop shields and exit\n", flush=True)
 
     try:
         while True:
@@ -117,7 +140,7 @@ def main():
             action = parts[0].lower()
             arg = parts[1] if len(parts) > 1 else ""
 
-            if action == "exit" or action == "quit":
+            if action in ("exit", "quit"):
                 break
             elif action == "status":
                 console.print_status(is_guard_active=True)
@@ -125,23 +148,42 @@ def main():
                 if arg:
                     console.scan_directory(arg)
                 else:
-                    print("[!] Usage: scan <path>")
+                    print("[!] Usage: scan <path>", flush=True)
             elif action == "quarantine":
                 console.show_quarantine()
             elif action == "restore":
                 if arg:
                     console.restore_quarantine_item(arg)
                 else:
-                    print("[!] Usage: restore <vault_id>")
+                    print("[!] Usage: restore <vault_id>", flush=True)
+            elif action == "delete":
+                if arg:
+                    console.delete_quarantine_item(arg)
+                else:
+                    print("[!] Usage: delete <vault_id>", flush=True)
+            elif action == "purge":
+                console.purge_quarantine()
+            elif action == "stats":
+                console.show_vault_stats()
+            elif action == "signatures":
+                console.show_signatures()
+            elif action == "events":
+                console.show_recent_events(fs_watcher, proc_monitor)
+            elif action == "web":
+                import webbrowser
+                webbrowser.open(f"http://127.0.0.1:{args.port}")
+                print(f"[+] Opened Web Dashboard in browser: http://127.0.0.1:{args.port}", flush=True)
             else:
-                print(f"[!] Unknown command: {action}. Type 'scan', 'status', 'quarantine', 'restore', or 'exit'.")
+                print(f"[!] Unknown command: {action}. Type 'scan', 'status', 'quarantine', 'restore', 'delete', 'purge', 'stats', 'signatures', 'events', 'web', or 'exit'.", flush=True)
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
-        print("\n[*] Stopping SentinelCore shields...")
+        print("\n[*] Stopping SentinelCore shields...", flush=True)
         fs_watcher.stop()
         proc_monitor.stop()
-        print("[+] All shields stopped safely.")
+        web_server.stop()
+        print("[+] All shields stopped safely.", flush=True)
 
 if __name__ == "__main__":
     main()
+

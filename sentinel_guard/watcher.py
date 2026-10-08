@@ -44,6 +44,10 @@ class FilesystemWatcher:
         # Only watch directories that exist
         self.watch_dirs = [os.path.abspath(d) for d in watch_dirs if os.path.exists(d)]
         self._scanned_hashes: Set[str] = set()
+        self.events_processed = 0
+        self.threats_blocked = 0
+        import collections
+        self.recent_events = collections.deque(maxlen=100)
 
     def start(self):
         """Starts real-time filesystem watchers in background threads."""
@@ -111,8 +115,27 @@ class FilesystemWatcher:
         if not os.path.exists(file_path):
             return
 
+        self.events_processed += 1
         verdict = self.scanner.scan_file(file_path)
         if verdict.is_malicious():
+            self.threats_blocked += 1
             vault_id = self.vault.isolate_file(file_path, reason=verdict.reason)
+            event_record = {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "type": "FILESYSTEM_THREAT_ISOLATED",
+                "path": file_path,
+                "reason": verdict.reason,
+                "vault_id": vault_id
+            }
+            self.recent_events.append(event_record)
             if self.on_alert:
                 self.on_alert(file_path, verdict, vault_id)
+        else:
+            if self.events_processed % 5 == 0:
+                event_record = {
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "type": "FILE_SCANNED_CLEAN",
+                    "path": os.path.basename(file_path),
+                    "reason": "Clean"
+                }
+                self.recent_events.append(event_record)

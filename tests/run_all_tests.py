@@ -8,9 +8,10 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from tests.test_vault import test_quarantine_and_restore
-from tests.test_scanner import test_tier1_cache, test_tier2_entropy_gate, test_tier3_signatures
+from tests.test_vault import test_quarantine_and_restore, test_vault_stats_and_purge
+from tests.test_scanner import test_tier1_cache, test_tier2_entropy_gate, test_tier3_signatures, test_upx_and_advanced_signatures
 from tests.test_ransomware import test_developer_workload_immunity, test_ransomware_burst_mitigation
+from tests.test_web_dashboard import test_web_dashboard_endpoints
 
 def main():
     print("==========================================================")
@@ -18,18 +19,24 @@ def main():
     print("==========================================================\n")
 
     passed = 0
-    total = 6
+    total = 9
 
     # Suite 1: Cryptographic Vault
-    print("--- [Suite 1/3] Cryptographic Quarantine Vault Tests ---")
+    print("--- [Suite 1/4] Cryptographic Quarantine Vault Tests ---")
     try:
         test_quarantine_and_restore()
         passed += 1
     except Exception as e:
         print(f"[!] test_quarantine_and_restore FAILED: {e}")
 
+    try:
+        test_vault_stats_and_purge()
+        passed += 1
+    except Exception as e:
+        print(f"[!] test_vault_stats_and_purge FAILED: {e}")
+
     # Suite 2: 3-Tier Static Scanner
-    print("\n--- [Suite 2/3] 3-Tier Scanning Engine Tests ---")
+    print("\n--- [Suite 2/4] 3-Tier Scanning Engine Tests ---")
     try:
         test_tier1_cache()
         passed += 1
@@ -48,8 +55,14 @@ def main():
     except Exception as e:
         print(f"[!] test_tier3_signatures FAILED: {e}")
 
+    try:
+        test_upx_and_advanced_signatures()
+        passed += 1
+    except Exception as e:
+        print(f"[!] test_upx_and_advanced_signatures FAILED: {e}")
+
     # Suite 3: Behavioral Ransomware Shield
-    print("\n--- [Suite 3/3] Behavioral Ransomware Shield Tests ---")
+    print("\n--- [Suite 3/4] Behavioral Ransomware Shield Tests ---")
     try:
         test_developer_workload_immunity()
         passed += 1
@@ -61,6 +74,15 @@ def main():
         passed += 1
     except Exception as e:
         print(f"[!] test_ransomware_burst_mitigation FAILED: {e}")
+
+    # Suite 4: Web Dashboard & Management API
+    print("\n--- [Suite 4/4] Web Dashboard & Management API Tests ---")
+    try:
+        test_web_dashboard_endpoints()
+        passed += 1
+    except Exception as e:
+        print(f"[!] test_web_dashboard_endpoints FAILED: {e}")
+
 
     print("\n" + "="*58)
     print(f"VERIFICATION SUMMARY: {passed}/{total} Test Suites Passed ({passed/total*100:.1f}%)")

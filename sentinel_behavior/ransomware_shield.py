@@ -51,6 +51,19 @@ class RansomwareShield:
         self.consecutive_burst_limit = consecutive_burst_limit
         self.on_threat_detected = on_threat_detected
         self.processes: Dict[int, ProcessActivityRecord] = {}
+        self.inspected_writes = 0
+        self.mitigated_count = 0
+        self.recent_alerts = collections.deque(maxlen=50)
+
+    def get_stats(self) -> Dict:
+        return {
+            "monitored_processes": len(self.processes),
+            "inspected_writes": self.inspected_writes,
+            "mitigated_count": self.mitigated_count,
+            "entropy_threshold": self.entropy_threshold,
+            "consecutive_burst_limit": self.consecutive_burst_limit,
+            "recent_alerts": list(self.recent_alerts)
+        }
 
     def get_or_create_process(self, pid: int) -> ProcessActivityRecord:
         if pid in self.processes:
@@ -79,6 +92,7 @@ class RansomwareShield:
         if proc.is_mitigated:
             return True
 
+        self.inspected_writes += 1
         now = time.time()
         # Fast entropy over first 4KB of write buffer
         entropy = calculate_shannon_entropy(data_sample[:4096])
@@ -115,6 +129,7 @@ class RansomwareShield:
         """Terminates the offending ransomware process to strictly bound damage."""
         proc.is_mitigated = True
         proc.mitigation_time = time.time()
+        self.mitigated_count += 1
         
         # Kill the offending process
         try:
@@ -123,5 +138,15 @@ class RansomwareShield:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
+        alert_ev = {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "RANSOMWARE_BURST_MITIGATED",
+            "pid": proc.pid,
+            "process": proc.name,
+            "reason": f"HighEntropyWriteBurst(>={self.entropy_threshold})"
+        }
+        self.recent_alerts.append(alert_ev)
+
         if self.on_threat_detected:
             self.on_threat_detected(proc)
+

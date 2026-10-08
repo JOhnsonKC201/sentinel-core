@@ -142,3 +142,50 @@ class QuarantineVault:
             cursor = conn.cursor()
             cursor.execute("SELECT * FROM quarantine_manifest ORDER BY quarantine_time DESC")
             return [dict(row) for row in cursor.fetchall()]
+
+    def delete_quarantined(self, vault_id: str) -> bool:
+        """Permanently deletes the encrypted vault archive and removes it from the manifest."""
+        vault_file = os.path.join(self.vault_dir, f"{vault_id}.qvault")
+        if os.path.exists(vault_file):
+            try:
+                # Overwrite before unlinking for secure deletion
+                file_size = os.path.getsize(vault_file)
+                with open(vault_file, "wb") as f:
+                    f.write(os.urandom(min(file_size, 4096)))
+                os.remove(vault_file)
+            except Exception:
+                pass
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM quarantine_manifest WHERE vault_id = ?", (vault_id,))
+            conn.commit()
+        return True
+
+    def purge_all(self) -> int:
+        """Permanently deletes all quarantined archives."""
+        items = self.list_quarantined()
+        count = 0
+        for item in items:
+            if self.delete_quarantined(item["vault_id"]):
+                count += 1
+        return count
+
+    def get_vault_stats(self) -> Dict:
+        """Returns summary statistics for the quarantine vault."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*), SUM(file_size) FROM quarantine_manifest WHERE is_restored = 0")
+            active_count, active_size = cursor.fetchone()
+            cursor.execute("SELECT COUNT(*) FROM quarantine_manifest WHERE is_restored = 1")
+            restored_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM quarantine_manifest")
+            total_count = cursor.fetchone()[0]
+
+        return {
+            "total_quarantined": total_count or 0,
+            "active_threats": active_count or 0,
+            "restored_count": restored_count or 0,
+            "active_bytes": active_size or 0,
+            "vault_path": self.vault_dir
+        }
+

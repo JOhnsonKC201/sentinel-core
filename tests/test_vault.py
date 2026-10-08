@@ -64,5 +64,49 @@ def test_quarantine_and_restore():
         import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
 
+def test_vault_stats_and_purge():
+    temp_dir = tempfile.mkdtemp()
+    try:
+        vault_dir = os.path.join(temp_dir, "vault")
+        vault = QuarantineVault(vault_dir=vault_dir)
+
+        # Create two test files
+        f1 = os.path.join(temp_dir, "mal1.exe")
+        f2 = os.path.join(temp_dir, "mal2.exe")
+        with open(f1, "wb") as f:
+            f.write(b"THREAT_A" * 100)
+        with open(f2, "wb") as f:
+            f.write(b"THREAT_B" * 200)
+
+        id1 = vault.isolate_file(f1, "Threat.Alpha")
+        id2 = vault.isolate_file(f2, "Threat.Beta")
+
+        stats = vault.get_vault_stats()
+        assert stats["total_quarantined"] == 2
+        assert stats["active_threats"] == 2
+        assert stats["active_bytes"] > 0
+
+        # Delete id1
+        del_ok = vault.delete_quarantined(id1)
+        assert del_ok is True
+        assert not os.path.exists(os.path.join(vault_dir, f"{id1}.qvault"))
+        assert len(vault.list_quarantined()) == 1
+
+        # Purge remaining
+        purged = vault.purge_all()
+        assert purged == 1
+        assert len(vault.list_quarantined()) == 0
+
+        stats2 = vault.get_vault_stats()
+        assert stats2["active_threats"] == 0
+
+        print("[+] test_vault_stats_and_purge: PASSED (Deletion shredding, purge, and vault stats verified)")
+    finally:
+        del vault
+        gc.collect()
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
 if __name__ == "__main__":
     test_quarantine_and_restore()
+    test_vault_stats_and_purge()
