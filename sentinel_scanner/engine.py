@@ -15,7 +15,12 @@ import sqlite3
 import re
 from typing import Tuple, Dict, Any, Optional
 
+from .exclusions import ExclusionManager
+from .heuristics import HeuristicAnalyzer
+
+
 VERDICT_ALLOW = 1
+
 VERDICT_BLOCK = 2
 VERDICT_QUARANTINE = 3
 
@@ -121,6 +126,8 @@ class SentinelScanner:
             
         self.db_path = db_path
         self._init_db()
+        self.exclusions = ExclusionManager()
+        self.heuristics = HeuristicAnalyzer()
         
         # In-memory fast LRU cache (key=sha256, val=verdict)
         self.cache: Dict[str, int] = collections.OrderedDict()
@@ -173,6 +180,18 @@ class SentinelScanner:
         
         # Step 1: Pre-calculate SHA-256
         sha256_hash = precomputed_sha256 if precomputed_sha256 else hashlib.sha256(data).hexdigest()
+
+        # Step 1a: Check Hash Whitelist Exclusion
+        if self.exclusions.is_hash_excluded(sha256_hash):
+            t1 = time.perf_counter_ns()
+            return ScanVerdict(
+                verdict=VERDICT_ALLOW,
+                reason="AllowlistedHash",
+                tier=0,
+                sha256=sha256_hash,
+                entropy=0.0,
+                scan_time_ms=(t1 - t0) / 1_000_000.0
+            )
 
         # Tier 1: Fast Reputation Cache
         if sha256_hash in self.cache:
@@ -232,6 +251,21 @@ class SentinelScanner:
                     scan_time_ms=(t1 - t0) / 1_000_000.0
                 )
 
+        # Tier 3b: Multi-Signal Heuristic Risk Scoring
+        heur = self.heuristics.analyze_bytes(scan_window, filename)
+        if heur["is_suspicious"]:
+            t1 = time.perf_counter_ns()
+            reason_str = f"Tier3:Heuristic.{heur['risk_level']}(Score={heur['score']})"
+            self.record_reputation(sha256_hash, VERDICT_QUARANTINE, reason_str)
+            return ScanVerdict(
+                verdict=VERDICT_QUARANTINE,
+                reason=reason_str,
+                tier=3,
+                sha256=sha256_hash,
+                entropy=ent,
+                scan_time_ms=(t1 - t0) / 1_000_000.0
+            )
+
         # Passed all checks -> Clean
         t1 = time.perf_counter_ns()
         self.record_reputation(sha256_hash, VERDICT_ALLOW, "Tier3:CleanBinary")
@@ -249,6 +283,9 @@ class SentinelScanner:
         file_path = os.path.abspath(file_path)
         if not os.path.exists(file_path):
             return ScanVerdict(VERDICT_ALLOW, "FileNotFound", 0, "", 0.0, 0.0)
+
+        if self.exclusions.is_path_excluded(file_path):
+            return ScanVerdict(VERDICT_ALLOW, "AllowlistedPath", 0, "", 0.0, 0.0)
 
         _, ext = os.path.splitext(file_path.lower())
         # Skip media files from signature scans

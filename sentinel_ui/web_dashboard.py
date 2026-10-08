@@ -102,8 +102,42 @@ class SentinelWebHandler(BaseHTTPRequestHandler):
             self._send_json(200, summary)
             return
 
+        if url == "/api/persistence":
+            from sentinel_scanner.persistence import PersistenceScanner
+            scanner_p = PersistenceScanner(self.scanner)
+            items = scanner_p.audit_all()
+            self._send_json(200, items)
+            return
+
+        if url == "/api/network":
+            from sentinel_guard.network_monitor import NetworkMonitor
+            net_mon = NetworkMonitor()
+            conns = net_mon.audit_connections()
+            self._send_json(200, conns[:80])
+            return
+
+        if url == "/api/exclusions":
+            summary = self.scanner.exclusions.get_summary()
+            self._send_json(200, summary)
+            return
+
+        if url == "/api/processes":
+            from sentinel_guard.process_monitor import ProcessMonitor
+            pm = self.proc_monitor or ProcessMonitor(self.scanner, self.vault)
+            procs = pm.audit_running_processes(limit=100)
+            self._send_json(200, procs)
+            return
+
+        if url == "/api/integrity":
+            from sentinel_guard.integrity_guard import IntegrityGuard
+            ig = IntegrityGuard()
+            res = ig.verify_integrity()
+            self._send_json(200, res)
+            return
+
         self.send_response(404)
         self.end_headers()
+
 
     def do_POST(self):
         url = self.path.split("?")[0]
@@ -200,6 +234,58 @@ class SentinelWebHandler(BaseHTTPRequestHandler):
                 self._send_json(200, {"success": True, "purged_count": purged})
             except Exception as e:
                 self._send_json(500, {"error": str(e)})
+            return
+
+        if url == "/api/process/kill":
+            body = self._read_json_body()
+            pid = body.get("pid")
+            if not pid:
+                self._send_json(400, {"error": "Missing pid parameter"})
+                return
+            from sentinel_guard.process_monitor import ProcessMonitor
+            pm = self.proc_monitor or ProcessMonitor(self.scanner, self.vault)
+            ok = pm.terminate_process(int(pid))
+            self._send_json(200, {"success": ok, "pid": pid})
+            return
+
+        if url == "/api/exclusions/add_path":
+            body = self._read_json_body()
+            path = body.get("path")
+            if not path:
+                self._send_json(400, {"error": "Missing path parameter"})
+                return
+            ok = self.scanner.exclusions.add_path_exclusion(path)
+            self._send_json(200, {"success": ok, "path": path})
+            return
+
+        if url == "/api/exclusions/remove_path":
+            body = self._read_json_body()
+            path = body.get("path")
+            if not path:
+                self._send_json(400, {"error": "Missing path parameter"})
+                return
+            ok = self.scanner.exclusions.remove_path_exclusion(path)
+            self._send_json(200, {"success": ok, "path": path})
+            return
+
+        if url == "/api/exclusions/add_hash":
+            body = self._read_json_body()
+            h = body.get("hash")
+            if not h:
+                self._send_json(400, {"error": "Missing hash parameter"})
+                return
+            ok = self.scanner.exclusions.add_hash_exclusion(h)
+            self._send_json(200, {"success": ok, "hash": h})
+            return
+
+        if url == "/api/exclusions/remove_hash":
+            body = self._read_json_body()
+            h = body.get("hash")
+            if not h:
+                self._send_json(400, {"error": "Missing hash parameter"})
+                return
+            ok = self.scanner.exclusions.remove_hash_exclusion(h)
+            self._send_json(200, {"success": ok, "hash": h})
             return
 
         self.send_response(404)

@@ -625,17 +625,33 @@
       </a>
       <a class="nav-item" onclick="navigate('scanner')">
         <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-        Virus & Threat Scan
+        Threat Scan
       </a>
       <a class="nav-item" onclick="navigate('quarantine')">
         <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-1 16H6c-.55 0-1-.45-1-1V6c0-.55.45-1 1-1h12c.55 0 1 .45 1 1v12c0 .55-.45 1-1 1zm-7-2h2v-2h-2v2zm0-4h2V7h-2v6z"/></svg>
         Quarantine Vault
       </a>
+      <a class="nav-item" onclick="navigate('processes')">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/></svg>
+        Process Guard
+      </a>
+      <a class="nav-item" onclick="navigate('persistence')">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+        Startup & AutoRun
+      </a>
+      <a class="nav-item" onclick="navigate('network')">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+        Network & C2
+      </a>
+      <a class="nav-item" onclick="navigate('exclusions')">
+        <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        Exclusions
+      </a>
 
-      <div class="nav-label">Configuration</div>
+      <div class="nav-label">System</div>
       <a class="nav-item" onclick="navigate('shields')">
         <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
-        Security Shields
+        Shields Info
       </a>
       <a class="nav-item" onclick="navigate('audit')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
@@ -658,6 +674,7 @@
     <div class="topbar">
       <div class="topbar-title" id="pageTitle">Protection Overview</div>
       <div class="topbar-actions">
+        <button class="btn btn-secondary btn-sm" onclick="verifyIntegrity()">Verify Integrity</button>
         <div class="status-pill healthy">
           <div class="status-dot"></div>
           <span>Device Protected</span>
@@ -834,7 +851,135 @@
       </div>
     </div>
 
-    <!-- VIEW 4: Security Shields -->
+    <!-- VIEW: Process Guard -->
+    <div id="viewProcesses" class="view-container">
+      <div class="card-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div>
+            <h3 class="panel-heading">Process Execution Guard</h3>
+            <p class="panel-subheading" style="margin-bottom: 0;">Inspect active process trees, memory injection APIs, and LOLBin command lines.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadProcesses()">Refresh Processes</button>
+        </div>
+
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Risk Score</th>
+                <th>PID</th>
+                <th>Process Name</th>
+                <th>Parent Process</th>
+                <th>Memory</th>
+                <th>Behavioral Indicators</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="processTableBody">
+              <tr><td colspan="8" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Click Refresh to audit active system processes.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Startup & AutoRun -->
+    <div id="viewPersistence" class="view-container">
+      <div class="card-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div>
+            <h3 class="panel-heading">Startup & AutoRun Integrity</h3>
+            <p class="panel-subheading" style="margin-bottom: 0;">Audit Registry Run keys and user/system Startup directories for stealth persistence.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadPersistence()">Audit AutoRun</button>
+        </div>
+
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Verdict</th>
+                <th>Location</th>
+                <th>Entry Name</th>
+                <th>Target Path</th>
+                <th>Arguments / Flags</th>
+              </tr>
+            </thead>
+            <tbody id="persistenceTableBody">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Loading AutoRun entries...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Network & C2 -->
+    <div id="viewNetwork" class="view-container">
+      <div class="card-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <div>
+            <h3 class="panel-heading">Network Connections & C2 Monitor</h3>
+            <p class="panel-subheading" style="margin-bottom: 0;">Audit active process TCP/UDP sockets, flagging known hacktool ports and reverse shells.</p>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="loadNetwork()">Audit Sockets</button>
+        </div>
+
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Risk</th>
+                <th>Process</th>
+                <th>PID</th>
+                <th>Proto</th>
+                <th>Local Address</th>
+                <th>Remote Address</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="networkTableBody">
+              <tr><td colspan="7" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Loading active network connections...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Exclusions -->
+    <div id="viewExclusions" class="view-container">
+      <div class="card-panel">
+        <h3 class="panel-heading">Exclusions & Whitelists</h3>
+        <p class="panel-subheading">Configure folder paths and SHA-256 hashes to bypass real-time scanning.</p>
+
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
+          <input type="text" id="newExclusionPath" class="text-input" placeholder="Folder path to exclude, e.g. C:\MySafeFolder">
+          <button class="btn btn-primary btn-sm" onclick="addPathExclusion()">Add Path</button>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem;">
+          <input type="text" id="newExclusionHash" class="text-input" placeholder="SHA-256 hash to whitelist (64 hex characters)">
+          <button class="btn btn-secondary btn-sm" onclick="addHashExclusion()">Add Hash</button>
+        </div>
+
+        <div class="data-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Value</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="exclusionsTableBody">
+              <tr><td colspan="3" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Loading exclusions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Security Shields -->
     <div id="viewShields" class="view-container">
       <div class="card-panel">
         <h3 class="panel-heading">Real-Time Protection Settings</h3>
@@ -918,12 +1063,20 @@
         'overview': 'Protection Overview',
         'scanner': 'Virus & Threat Scan',
         'quarantine': 'Quarantine Vault',
-        'shields': 'Security Shields & Configuration',
+        'processes': 'Process Execution Guard',
+        'persistence': 'Startup & AutoRun Integrity',
+        'network': 'Network Connections & C2 Monitor',
+        'exclusions': 'Security Exclusions & Whitelists',
+        'shields': 'Security Shields & Architecture',
         'audit': 'Security Telemetry & Audit Log'
       };
       document.getElementById('pageTitle').innerText = titles[viewName] || 'SentinelCore Security';
 
       if (viewName === 'quarantine') loadQuarantine();
+      if (viewName === 'processes') loadProcesses();
+      if (viewName === 'persistence') loadPersistence();
+      if (viewName === 'network') loadNetwork();
+      if (viewName === 'exclusions') loadExclusions();
       if (viewName === 'audit') loadStatus();
     }
 
@@ -1131,6 +1284,239 @@
         alert("Scan failed: " + err);
       } finally {
         btn.disabled = false;
+      }
+    }
+
+    async function verifyIntegrity() {
+      try {
+        const res = await fetch('/api/integrity');
+        const data = await res.json();
+        if (data.is_intact) {
+          alert(`System Integrity: PASSED\n\n• Verified Components: ${data.verified_count}/${data.total_monitored} files intact\n• Zero Tampering Detected\n• Verified at: ${data.timestamp}`);
+        } else {
+          let msg = "WARNING: Tamper Detected!\n\n";
+          if (data.tampered_files && data.tampered_files.length) {
+            msg += "Modified Files: " + data.tampered_files.map(f => f.file).join(', ') + "\n";
+          }
+          if (data.missing_files && data.missing_files.length) {
+            msg += "Missing Files: " + data.missing_files.join(', ') + "\n";
+          }
+          alert(msg);
+        }
+      } catch (err) {
+        alert("Integrity check failed: " + err);
+      }
+    }
+
+    async function loadProcesses() {
+      const tbody = document.getElementById('processTableBody');
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Auditing system processes...</td></tr>';
+      try {
+        const res = await fetch('/api/processes');
+        const list = await res.json();
+        if (!list || list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No active processes found.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        list.forEach(p => {
+          let tag = '<span class="tag tag-emerald">CLEAN</span>';
+          if (p.threat_level === 'HIGH_RISK') tag = '<span class="tag tag-rose">HIGH RISK</span>';
+          else if (p.threat_level === 'SUSPICIOUS') tag = '<span class="tag tag-amber">SUSPICIOUS</span>';
+
+          const inds = (p.indicators && p.indicators.length > 0) ? p.indicators.join('; ') : 'Normal behavior';
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${tag}</td>
+            <td style="font-weight: 600;">${p.risk_score}/100</td>
+            <td style="font-family: monospace;">${p.pid}</td>
+            <td><strong>${p.name}</strong></td>
+            <td style="color: var(--text-secondary);">${p.parent || '-'}</td>
+            <td style="font-family: monospace;">${p.memory_mb} MB</td>
+            <td style="font-size: 0.8rem; color: var(--text-secondary);">${inds}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="killProcess(${p.pid})">Kill</button></td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--accent-rose); padding: 2rem;">Process audit error: ${err}</td></tr>`;
+      }
+    }
+
+    async function killProcess(pid) {
+      if (!confirm(`Terminate process PID ${pid}?`)) return;
+      try {
+        const res = await fetch('/api/process/kill', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({pid: pid})
+        });
+        const out = await res.json();
+        if (out.success) {
+          alert(`Terminated process PID ${pid}`);
+          loadProcesses();
+        } else {
+          alert(`Could not terminate PID ${pid} (Process already exited or permission denied)`);
+        }
+      } catch (err) {
+        alert("Termination error: " + err);
+      }
+    }
+
+    async function loadPersistence() {
+      const tbody = document.getElementById('persistenceTableBody');
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Scanning AutoRun entries...</td></tr>';
+      try {
+        const res = await fetch('/api/persistence');
+        const items = await res.json();
+        if (!items || items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No AutoRun items detected.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        items.forEach(it => {
+          const tag = it.is_threat 
+            ? '<span class="tag tag-rose">THREAT</span>' 
+            : '<span class="tag tag-emerald">CLEAN</span>';
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${tag}</td>
+            <td><span class="tag tag-muted">${it.location || ''}</span></td>
+            <td><strong>${it.name || ''}</strong></td>
+            <td style="font-size: 0.8rem; word-break: break-all; color: var(--text-secondary);">${it.target_path || ''}</td>
+            <td style="font-size: 0.78rem; font-family: monospace; color: var(--text-tertiary);">${it.command || '-'}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--accent-rose); padding: 2rem;">AutoRun scan error: ${err}</td></tr>`;
+      }
+    }
+
+    async function loadNetwork() {
+      const tbody = document.getElementById('networkTableBody');
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Auditing process sockets...</td></tr>';
+      try {
+        const res = await fetch('/api/network');
+        const list = await res.json();
+        if (!list || list.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No network sockets active.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        list.forEach(c => {
+          let tag = '<span class="tag tag-emerald">CLEAN</span>';
+          if (c.threat_level === 'HIGH_RISK') tag = '<span class="tag tag-rose">HIGH RISK</span>';
+          else if (c.threat_level === 'SUSPICIOUS') tag = '<span class="tag tag-amber">SUSPICIOUS</span>';
+
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${tag}</td>
+            <td><strong>${c.process}</strong></td>
+            <td style="font-family: monospace;">${c.pid}</td>
+            <td><span class="tag tag-muted">${c.protocol}</span></td>
+            <td style="font-family: monospace; font-size: 0.8rem;">${c.local_address}</td>
+            <td style="font-family: monospace; font-size: 0.8rem; color: var(--text-secondary);">${c.remote_address || '*'}</td>
+            <td style="font-size: 0.8rem;">${c.status}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--accent-rose); padding: 2rem;">Network audit error: ${err}</td></tr>`;
+      }
+    }
+
+    async function loadExclusions() {
+      const tbody = document.getElementById('exclusionsTableBody');
+      tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-tertiary); padding: 2rem;">Loading exclusions...</td></tr>';
+      try {
+        const res = await fetch('/api/exclusions');
+        const data = await res.json();
+        tbody.innerHTML = '';
+        let total = 0;
+        (data.paths || []).forEach(p => {
+          total++;
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><span class="tag tag-muted">FOLDER PATH</span></td>
+            <td style="word-break: break-all; font-size: 0.85rem;">${p}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="removePathExclusion('${p.replace(/\\/g, '\\\\')}')">Remove</button></td>
+          `;
+          tbody.appendChild(row);
+        });
+        (data.hashes || []).forEach(h => {
+          total++;
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><span class="tag tag-muted">SHA-256 HASH</span></td>
+            <td style="font-family: monospace; font-size: 0.8rem;">${h}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="removeHashExclusion('${h}')">Remove</button></td>
+          `;
+          tbody.appendChild(row);
+        });
+        if (total === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-secondary); padding: 2rem;">No exclusions configured. All files and hashes will be scanned.</td></tr>';
+        }
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--accent-rose); padding: 2rem;">Exclusions fetch error: ${err}</td></tr>`;
+      }
+    }
+
+    async function addPathExclusion() {
+      const p = document.getElementById('newExclusionPath').value.trim();
+      if (!p) return alert("Please enter a path to exclude");
+      try {
+        const res = await fetch('/api/exclusions/add_path', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({path: p})
+        });
+        document.getElementById('newExclusionPath').value = '';
+        loadExclusions();
+      } catch (err) {
+        alert("Add exclusion error: " + err);
+      }
+    }
+
+    async function removePathExclusion(path) {
+      try {
+        await fetch('/api/exclusions/remove_path', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({path: path})
+        });
+        loadExclusions();
+      } catch (err) {
+        alert("Remove exclusion error: " + err);
+      }
+    }
+
+    async function addHashExclusion() {
+      const h = document.getElementById('newExclusionHash').value.trim();
+      if (!h || h.length !== 64) return alert("Please enter a valid 64-character SHA-256 hex string");
+      try {
+        const res = await fetch('/api/exclusions/add_hash', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({hash: h})
+        });
+        document.getElementById('newExclusionHash').value = '';
+        loadExclusions();
+      } catch (err) {
+        alert("Add hash error: " + err);
+      }
+    }
+
+    async function removeHashExclusion(hash) {
+      try {
+        await fetch('/api/exclusions/remove_hash', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({hash: hash})
+        });
+        loadExclusions();
+      } catch (err) {
+        alert("Remove hash error: " + err);
       }
     }
 

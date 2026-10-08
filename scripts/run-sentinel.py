@@ -48,6 +48,10 @@ def main():
     parser.add_argument("--daemon", action="store_true", help="Run headlessly as background guard")
     parser.add_argument("--web", action="store_true", help="Launch interactive web management dashboard in browser")
     parser.add_argument("--gui", action="store_true", help="Launch native desktop GUI application")
+    parser.add_argument("--autorun", action="store_true", help="Audit Windows startup and persistence autorun entries")
+    parser.add_argument("--net", action="store_true", help="Audit active network sockets for suspicious C2 connections")
+    parser.add_argument("--procs", action="store_true", help="Audit currently running processes for LOLBins and anomalies")
+    parser.add_argument("--integrity", action="store_true", help="Verify SentinelCore anti-tamper self-defense integrity")
     parser.add_argument("--port", type=int, default=8765, help="Port for web dashboard (default: 8765)")
     args = parser.parse_args()
 
@@ -69,6 +73,62 @@ def main():
     if args.scan:
         console.print_banner()
         console.scan_directory(args.scan)
+        return
+
+    if args.integrity:
+        from sentinel_guard.integrity_guard import IntegrityGuard
+        ig = IntegrityGuard()
+        res = ig.verify_integrity()
+        console.print_banner()
+        print(f"[*] Verifying SentinelCore Core Engine Integrity Manifest ({res['timestamp']}):")
+        if res["is_intact"]:
+            print(f"[+] INTEGRITY VALID: All {res['verified_count']}/{res['total_monitored']} core binaries and databases are intact.")
+            print("[+] Zero tampering or file corruptions detected.\n")
+        else:
+            print(f"[!] TAMPER DETECTED: {len(res['tampered_files'])} modified, {len(res['missing_files'])} missing!")
+            for t in res["tampered_files"]:
+                print(f"    - Modified: {t['file']}")
+            for m in res["missing_files"]:
+                print(f"    - Missing: {m}")
+        return
+
+    if args.autorun:
+        from sentinel_scanner.persistence import PersistenceScanner
+        ps = PersistenceScanner(scanner)
+        console.print_banner()
+        print("[*] Auditing Windows Registry and Startup AutoRun entries...\n")
+        items = ps.audit_all()
+        threat_count = sum(1 for i in items if i.get("is_threat"))
+        for it in items:
+            flag = "[! THREAT]" if it.get("is_threat") else "[+ CLEAN]"
+            print(f" {flag:<12} | {it.get('location', ''):<18} | {it.get('name', ''):<25} | {it.get('target_path', '')}")
+        print(f"\n[*] Total AutoRun entries audited: {len(items)} (Threats/Suspicious: {threat_count})\n")
+        return
+
+    if args.net:
+        from sentinel_guard.network_monitor import NetworkMonitor
+        nm = NetworkMonitor()
+        console.print_banner()
+        print("[*] Auditing active TCP/UDP sockets for suspicious C2 connections...\n")
+        conns = nm.audit_connections()
+        threat_count = sum(1 for c in conns if c["threat_level"] != "CLEAN")
+        for c in conns[:40]:
+            lvl = f"[{c['threat_level']}]"
+            print(f" {lvl:<14} | {c['process']:<20} (PID {c['pid']:<6}) | {c['protocol']:<4} | {c['local_address']:<21} -> {c['remote_address'] or '*'}")
+        print(f"\n[*] Active sockets audited: {len(conns)} (Alerts: {threat_count})\n")
+        return
+
+    if args.procs:
+        pm = ProcessMonitor(scanner, vault)
+        console.print_banner()
+        print("[*] Auditing running processes for LOLBins and execution anomalies...\n")
+        procs = pm.audit_running_processes(limit=40)
+        susp_count = sum(1 for p in procs if p["threat_level"] != "CLEAN")
+        for p in procs:
+            lvl = f"[{p['threat_level']}]"
+            ind = f" | {', '.join(p['indicators'])}" if p["indicators"] else ""
+            print(f" {lvl:<14} | Score: {p['risk_score']:<3}/100 | PID {p['pid']:<6} | {p['name']:<22} | {p['memory_mb']:>6.1f} MB{ind}")
+        print(f"\n[*] Audited running processes: {len(procs)} (Elevated Risk: {susp_count})\n")
         return
 
     # 3. Initialize Real-Time Shields

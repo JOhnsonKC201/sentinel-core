@@ -1,0 +1,16 @@
+{
+  "created_at": "2026-10-08 00:08:31",
+  "file_count": 10,
+  "hashes": {
+    "sentinel_scanner\\engine.py": "a21b5dc99285852c7e85de3c7f9d44b52b97c5aa2240824d77143f1db561155d",
+    "sentinel_scanner\\heuristics.py": "0f8a39a16bc44234d41197b9accf7fa16caf9cb6a62ac0369a89f5d181424734",
+    "sentinel_scanner\\persistence.py": "927f39add3595e176f2aa87375f655007c1ae483c08f7f67b2f8803b9915d8af",
+    "sentinel_scanner\\exclusions.py": "1776c08a3981914a8e612346fa23666a2d9eaba583a38246b7b9c5be1e06c928",
+    "sentinel_guard\\watcher.py": "0b14773bc5fcf5dd278c48e3dbad09a0d579d0ff5daed0925c3ae40290c1702a",
+    "sentinel_guard\\process_monitor.py": "4c894104df3e454f18162f04b1e9fb512dd4df41af2a72711f03cbe16fe880dc",
+    "sentinel_guard\\network_monitor.py": "d76e9f3a05ffbb5c5a0fdb77982e8f167da327b1be4d215ff6dbec0934f59237",
+    "sentinel_vault\\vault.py": "40d131b8b58625ebdd450bae4110dd225c0c07bf3b07d884ef2def0c2174d9be",
+    "sentinel_ui\\web_dashboard.py": "cf59284a823541cea4a68fcbc3667df23eac8f5eebaa42f8f88e1562a49f8f40",
+    "sentinel_ui\\desktop_gui.py": "32b6e9737ef23638cc96942b1fc62111cf7b037650b5ca1032eecf79bdbac60e"
+  }
+}

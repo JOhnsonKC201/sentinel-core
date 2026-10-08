@@ -47,4 +47,24 @@ if /i "%~1"=="status" (
     goto :eof
 )
 
+if /i "%~1"=="autorun" (
+    python "C:\Users\johns\sentinel-core\scripts\run-sentinel.py" --autorun
+    goto :eof
+)
+
+if /i "%~1"=="net" (
+    python "C:\Users\johns\sentinel-core\scripts\run-sentinel.py" --net
+    goto :eof
+)
+
+if /i "%~1"=="procs" (
+    python "C:\Users\johns\sentinel-core\scripts\run-sentinel.py" --procs
+    goto :eof
+)
+
+if /i "%~1"=="integrity" (
+    python "C:\Users\johns\sentinel-core\scripts\run-sentinel.py" --integrity
+    goto :eof
+)
+
 python "C:\Users\johns\sentinel-core\scripts\run-sentinel.py" %*

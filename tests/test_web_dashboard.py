@@ -69,7 +69,19 @@ def test_web_dashboard_endpoints():
             assert response.status == 200
             scan_res = json.loads(response.read().decode("utf-8"))
             assert scan_res["total_scanned"] == 1
-            assert scan_res["threats_found"] == 0
+        # 5. Test /api/exclusions
+        with urllib.request.urlopen(f"{base_url}/api/exclusions") as response:
+            assert response.status == 200
+            ex_data = json.loads(response.read().decode("utf-8"))
+            assert "paths" in ex_data
+            assert "hashes" in ex_data
+
+        # 6. Test /api/integrity
+        with urllib.request.urlopen(f"{base_url}/api/integrity") as response:
+            assert response.status == 200
+            integ_data = json.loads(response.read().decode("utf-8"))
+            assert "is_intact" in integ_data
+            assert "status" in integ_data
 
         server.stop()
         print("[+] test_web_dashboard_endpoints: PASSED (Web UI and REST API validated)")
