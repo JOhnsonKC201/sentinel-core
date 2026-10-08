@@ -12,7 +12,12 @@ if /i "%~1"=="web" (
 )
 
 if /i "%~1"=="gui" (
-    python "C:\Users\johns\sentinel-core\scripts\run-sentinel.py" --web
+    python "C:\Users\johns\sentinel-core\scripts\run-sentinel.py" --gui
+    goto :eof
+)
+
+if /i "%~1"=="app" (
+    start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --app="http://127.0.0.1:8765" --window-size=1200,800
     goto :eof
 )
 

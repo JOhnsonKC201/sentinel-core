@@ -47,15 +47,25 @@ def main():
     parser.add_argument("--scan", type=str, help="Run an on-demand scan on a specific file or folder")
     parser.add_argument("--daemon", action="store_true", help="Run headlessly as background guard")
     parser.add_argument("--web", action="store_true", help="Launch interactive web management dashboard in browser")
+    parser.add_argument("--gui", action="store_true", help="Launch native desktop GUI application")
     parser.add_argument("--port", type=int, default=8765, help="Port for web dashboard (default: 8765)")
     args = parser.parse_args()
 
-    # 1. Initialize Core Engines
+    # 1. Check if GUI desktop app requested
+    if args.gui:
+        import tkinter as tk
+        from sentinel_ui.desktop_gui import SentinelDesktopApp
+        root = tk.Tk()
+        app = SentinelDesktopApp(root)
+        root.mainloop()
+        return
+
+    # 2. Initialize Core Engines
     vault = QuarantineVault()
     scanner = SentinelScanner()
     console = SentinelConsole(scanner=scanner, vault=vault)
 
-    # 2. Check if single on-demand scan requested
+    # 3. Check if single on-demand scan requested
     if args.scan:
         console.print_banner()
         console.scan_directory(args.scan)
