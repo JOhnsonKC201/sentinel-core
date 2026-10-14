@@ -27,21 +27,34 @@ def notify_threat_blocked(title: str, message: str, threat_path: str = ""):
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [THREAT_NEUTRALIZED] {title} - {message} ({threat_path})\n")
 
-    # Native Windows Toast Notification via PowerShell (asynchronous)
-    ps_script = f"""
-    [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null
-    $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)
-    $textNodes = $template.GetElementsByTagName("text")
-    $textNodes.Item(0).AppendChild($template.CreateTextNode("{title}")) > $null
-    $textNodes.Item(1).AppendChild($template.CreateTextNode("{message}")) > $null
-    $toast = [Windows.UI.Notifications.ToastNotification]::new($template)
-    [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("SentinelCore Antivirus").Show($toast)
-    """
+    _show_toast(title, message)
+
+
+# The toast text is attacker controlled (file and process names), so it is
+# handed to PowerShell through environment variables and read as data. It is
+# never pasted into the script, where "$(...)" would execute.
+CREATE_NO_WINDOW = 0x08000000
+TOAST_SCRIPT = (
+    "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null; "
+    "$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent("
+    "[Windows.UI.Notifications.ToastTemplateType]::ToastText02); "
+    "$textNodes = $template.GetElementsByTagName('text'); "
+    "$textNodes.Item(0).AppendChild($template.CreateTextNode($env:SENTINEL_TOAST_TITLE)) > $null; "
+    "$textNodes.Item(1).AppendChild($template.CreateTextNode($env:SENTINEL_TOAST_MESSAGE)) > $null; "
+    "$toast = [Windows.UI.Notifications.ToastNotification]::new($template); "
+    "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('SentinelCore Antivirus').Show($toast)"
+)
+
+
+def _show_toast(title: str, message: str):
+    env = dict(os.environ, SENTINEL_TOAST_TITLE=title, SENTINEL_TOAST_MESSAGE=message)
     try:
         subprocess.Popen(
-            ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_script],
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", TOAST_SCRIPT],
+            env=env,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stderr=subprocess.DEVNULL,
+            creationflags=CREATE_NO_WINDOW,
         )
-    except Exception:
+    except OSError:
         pass
