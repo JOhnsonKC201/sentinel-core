@@ -32,7 +32,7 @@ $DesktopDir = [Environment]::GetFolderPath("Desktop")
 $DesktopShortcutPath = Join-Path $DesktopDir "SentinelCore Antivirus.lnk"
 $Shortcut = $WshShell.CreateShortcut($DesktopShortcutPath)
 $Shortcut.TargetPath = $PythonExe
-$Shortcut.Arguments = "`"$RepoDir\scripts\run-sentinel.py`" --web"
+$Shortcut.Arguments = "`"$RepoDir\scripts\run-sentinel.py`" --gui"
 $Shortcut.WorkingDirectory = $RepoDir
 $Shortcut.Description = "SentinelCore Personal Antivirus & Security Dashboard"
 $Shortcut.IconLocation = "$env:WINDIR\System32\SecurityAndMaintenance_Error.ico,0"
@@ -47,7 +47,7 @@ if (-not (Test-Path $StartMenuDir)) {
 $StartMenuShortcutPath = Join-Path $StartMenuDir "SentinelCore Antivirus.lnk"
 $StartShortcut = $WshShell.CreateShortcut($StartMenuShortcutPath)
 $StartShortcut.TargetPath = $PythonExe
-$StartShortcut.Arguments = "`"$RepoDir\scripts\run-sentinel.py`" --web"
+$StartShortcut.Arguments = "`"$RepoDir\scripts\run-sentinel.py`" --gui"
 $StartShortcut.WorkingDirectory = $RepoDir
 $StartShortcut.Description = "SentinelCore Personal Antivirus & Security Dashboard"
 $StartShortcut.IconLocation = "$env:WINDIR\System32\SecurityAndMaintenance_Error.ico,0"
@@ -70,7 +70,7 @@ Write-Host "       SentinelCore Installation Completed Successfully!   " -Foregr
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "You can now run SentinelCore in multiple ways:"
 Write-Host "  1. Double-click the 'SentinelCore Antivirus' shortcut on your Desktop" -ForegroundColor Yellow
-Write-Host "  2. Type 'sentinel web' in any terminal to open the Web UI" -ForegroundColor Yellow
+Write-Host "  2. Type 'sentinel gui' in any terminal to open the desktop app" -ForegroundColor Yellow
 Write-Host "  3. Type 'sentinel' in any terminal for interactive CLI console" -ForegroundColor Yellow
 Write-Host "  4. Type 'sentinel scan <path>' to scan any folder on demand" -ForegroundColor Yellow
 Write-Host "  5. Type 'sentinel start' / 'sentinel stop' to manage background shields" -ForegroundColor Yellow

@@ -448,7 +448,7 @@ class SentinelDesktopApp:
 
         tk.Label(
             foot,
-            text="SentinelCore Endpoint Security • Web Console: http://127.0.0.1:8765",
+            text="SentinelCore Endpoint Security",
             font=("Segoe UI", 8),
             fg="#64748B",
             bg="#141824"

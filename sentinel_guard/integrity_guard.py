@@ -21,7 +21,6 @@ CORE_TARGETS = [
     os.path.join("sentinel_guard", "network_monitor.py"),
     os.path.join("sentinel_vault", "vault.py"),
     os.path.join("sentinel_behavior", "shield.py"),
-    os.path.join("sentinel_ui", "web_dashboard.py"),
     os.path.join("sentinel_ui", "desktop_gui.py"),
 ]
 
