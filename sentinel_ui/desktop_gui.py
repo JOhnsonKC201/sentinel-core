@@ -3,36 +3,48 @@ Native Windows Desktop Security GUI for SentinelCore
 Clean Windows Security / Enterprise endpoint UI styling without generic AI aesthetics.
 """
 
+import argparse
 import os
+import queue
 import sys
 import time
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-from typing import Optional
+from typing import List, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from sentinel_scanner.engine import SentinelScanner, VERDICT_ALLOW, VERDICT_BLOCK, VERDICT_QUARANTINE
+from sentinel_scanner.engine import SentinelScanner
 from sentinel_vault.vault import QuarantineVault
 from sentinel_guard.process_monitor import ProcessMonitor
 from sentinel_guard.network_monitor import NetworkMonitor
 from sentinel_guard.integrity_guard import IntegrityGuard
+from sentinel_guard.protection import ProtectionService
 from sentinel_scanner.persistence import PersistenceScanner
+from sentinel_ui import tray as tray_commands
+from sentinel_ui.audit_tabs import build_network_tab, build_persistence_tab, build_process_tab
+from sentinel_ui.notifications import log_threat
+from sentinel_ui.protection_tab import ProtectionTab
+from sentinel_ui.single_instance import SingleInstance
+from sentinel_ui.status import LEVEL_COLORS, summarize
+from sentinel_ui.tray import SentinelTray
+
+POLL_MS = 250
+REFRESH_EVERY_POLLS = 8  # about every two seconds
+MAX_SCAN_FILES = 1500
+HOME = os.path.expanduser("~")
+
 
 class SentinelDesktopApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, start_hidden: bool = False,
+                 instance: Optional[SingleInstance] = None, use_tray: bool = True):
         self.root = root
+        self.instance = instance
         self.root.title("SentinelCore Security")
         self.root.geometry("1080x730")
         self.root.minsize(920, 620)
         self.root.configure(bg="#0E121A")
-
-        # Bring window forward
-        self.root.lift()
-        self.root.attributes("-topmost", True)
-        self.root.after(400, lambda: self.root.attributes("-topmost", False))
-        self.root.focus_force()
 
         # Engines
         self.vault = QuarantineVault()
@@ -40,6 +52,22 @@ class SentinelDesktopApp:
         self.proc_monitor = ProcessMonitor(scanner=self.scanner, vault=self.vault)
         self.net_monitor = NetworkMonitor()
         self.integrity_guard = IntegrityGuard()
+        self.integrity_ok: Optional[bool] = None
+
+        # Shield callbacks fire on watcher threads; Tk is only touched from
+        # the poll loop, which drains these queues.
+        self.ui_events: "queue.Queue[tuple]" = queue.Queue()
+        self.tray_queue: "queue.Queue[str]" = queue.Queue()
+        self.protection = ProtectionService(
+            self.scanner, self.vault,
+            on_file_threat=lambda path, verdict, vault_id: self.ui_events.put(
+                ("threat", f"Malware quarantined: {verdict.reason}", os.path.basename(path), path)),
+            on_process_threat=lambda pid, name, verdict, vault_id: self.ui_events.put(
+                ("threat", f"Malicious process stopped: {name}", f"PID {pid}, {verdict.reason}", f"PID {pid}")),
+        )
+        self.tray = SentinelTray(self.tray_queue) if use_tray else None
+        self._told_about_tray = False
+        self._polls = 0
 
         self._apply_native_style()
         self._build_header()
@@ -47,9 +75,19 @@ class SentinelDesktopApp:
         self._build_tabs()
         self._build_footer()
 
+        self.protection.start()
+        if self.tray is not None:
+            self.tray.start()
+        self.root.protocol("WM_DELETE_WINDOW", self.hide_to_tray if self.tray else self.quit)
+        if start_hidden and self.tray is not None:
+            self.root.withdraw()
+        else:
+            self.show_window()
+
         self.refresh_quarantine()
         self.refresh_metrics()
-        self.root.after(4000, self._auto_refresh)
+        threading.Thread(target=self._check_integrity, daemon=True).start()
+        self.root.after(POLL_MS, self._poll)
 
     def _apply_native_style(self):
         style = ttk.Style()
@@ -101,30 +139,33 @@ class SentinelDesktopApp:
         sub = tk.Label(left, text=" • Personal Endpoint Protection Suite", font=("Segoe UI", 9), fg="#64748B", bg="#141824")
         sub.pack(side="left", padx=(4, 0))
 
-        status_pill = tk.Label(
-            header,
-            text="● Device Protected",
-            font=("Segoe UI", 9, "bold"),
-            fg="#10B981",
-            bg="#064E3B",
-            padx=10,
-            pady=3
-        )
-        status_pill.pack(side="right")
+        self.status_pill = tk.Label(header, text="● Checking...", font=("Segoe UI", 9, "bold"),
+                                    fg="#94A3B8", bg="#1E293B", padx=10, pady=3)
+        self.status_pill.pack(side="right")
 
     def _build_status_banner(self):
         banner = tk.Frame(self.root, bg="#141824", bd=1, relief="solid", padx=20, pady=12)
         banner.pack(fill="x", padx=20, pady=(12, 8))
 
+        # Right action buttons are packed first: Tk hands out space in packing
+        # order, so they always get their full width and the text wraps instead.
+        actions_frame = tk.Frame(banner, bg="#141824")
+        actions_frame.pack(side="right")
+
+        self.btn_protection = ttk.Button(actions_frame, text="Turn protection off", style="Secondary.TButton", command=self._toggle_all_protection)
+        self.btn_protection.pack(side="left", padx=4)
+        ttk.Button(actions_frame, text="Verify Integrity", style="Secondary.TButton", command=self._verify_core_integrity).pack(side="left", padx=4)
+        ttk.Button(actions_frame, text="Quick Scan", style="Primary.TButton", command=lambda: self._quick_scan("Downloads")).pack(side="left", padx=4)
+
         # Left Info
         info_frame = tk.Frame(banner, bg="#141824")
         info_frame.pack(side="left", fill="both", expand=True)
 
-        h_lbl = tk.Label(info_frame, text="Current status: Protected", font=("Segoe UI", 11, "bold"), fg="#FFFFFF", bg="#141824")
-        h_lbl.pack(anchor="w")
+        self.lbl_headline = tk.Label(info_frame, text="Checking protection...", font=("Segoe UI", 11, "bold"), fg="#FFFFFF", bg="#141824")
+        self.lbl_headline.pack(anchor="w")
 
-        p_lbl = tk.Label(info_frame, text="Real-time file shield, memory execution guard, network monitor, and ransomware defenses are running.", font=("Segoe UI", 9), fg="#94A3B8", bg="#141824")
-        p_lbl.pack(anchor="w", pady=(1, 5))
+        self.lbl_detail = tk.Label(info_frame, text="", font=("Segoe UI", 9), fg="#94A3B8", bg="#141824", justify="left")
+        self.lbl_detail.pack(anchor="w", pady=(1, 5))
 
         meta_frame = tk.Frame(info_frame, bg="#141824")
         meta_frame.pack(anchor="w")
@@ -135,15 +176,11 @@ class SentinelDesktopApp:
         self.lbl_threats = tk.Label(meta_frame, text="Quarantined: 0 items", font=("Segoe UI", 8), fg="#F59E0B", bg="#141824")
         self.lbl_threats.pack(side="left", padx=(0, 16))
 
-        ver_lbl = tk.Label(meta_frame, text="Definitions: Up to date (2026.10)", font=("Segoe UI", 8), fg="#64748B", bg="#141824")
-        ver_lbl.pack(side="left")
+        rule_count = self.scanner.get_signatures_summary().get("tier3_signatures_count", 0)
+        tk.Label(meta_frame, text=f"Signature rules: {rule_count}", font=("Segoe UI", 8), fg="#64748B", bg="#141824").pack(side="left", padx=(0, 16))
 
-        # Right Action Buttons
-        actions_frame = tk.Frame(banner, bg="#141824")
-        actions_frame.pack(side="right")
-
-        ttk.Button(actions_frame, text="Verify Integrity", style="Secondary.TButton", command=self._verify_core_integrity).pack(side="left", padx=4)
-        ttk.Button(actions_frame, text="Quick Scan", style="Primary.TButton", command=lambda: self._quick_scan("Downloads")).pack(side="left", padx=4)
+        self.lbl_activity = tk.Label(info_frame, text="", font=("Segoe UI", 8), fg="#64748B", bg="#141824")
+        self.lbl_activity.pack(anchor="w", pady=(2, 0))
 
     def _build_tabs(self):
         container = tk.Frame(self.root, bg="#0E121A", padx=20, pady=2)
@@ -151,6 +188,11 @@ class SentinelDesktopApp:
 
         self.notebook = ttk.Notebook(container)
         self.notebook.pack(fill="both", expand=True)
+
+        # Tab 0: Live protection
+        self.tab_protection = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
+        self.notebook.add(self.tab_protection, text=" Protection ")
+        self.protection_tab = ProtectionTab(self.tab_protection, on_toggle=self._toggle_shield)
 
         # Tab 1: Scanner
         self.tab_scan = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
@@ -162,30 +204,20 @@ class SentinelDesktopApp:
         self.notebook.add(self.tab_vault, text=" Quarantine Vault ")
         self._setup_quarantine_tab()
 
-        # Tab 3: Process Guard
-        self.tab_process = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
-        self.notebook.add(self.tab_process, text=" Process Guard ")
-        self._setup_process_tab()
-
-        # Tab 4: Persistence Audit
-        self.tab_persist = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
-        self.notebook.add(self.tab_persist, text=" Startup & AutoRun ")
-        self._setup_persistence_tab()
-
-        # Tab 5: Network Connections
-        self.tab_network = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
-        self.notebook.add(self.tab_network, text=" Network & C2 ")
-        self._setup_network_tab()
+        # Tabs 3-5: on-demand audits
+        post = lambda fn: self.ui_events.put(("call", fn))
+        for title, build, source in (
+                (" Process Guard ", build_process_tab, self.proc_monitor),
+                (" Startup & AutoRun ", build_persistence_tab, PersistenceScanner(self.scanner)),
+                (" Network & C2 ", build_network_tab, self.net_monitor)):
+            frame = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
+            self.notebook.add(frame, text=title)
+            build(frame, post, source)
 
         # Tab 6: Exclusions
         self.tab_exclusions = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
         self.notebook.add(self.tab_exclusions, text=" Exclusions ")
         self._setup_exclusions_tab()
-
-        # Tab 7: Security Shields
-        self.tab_shields = tk.Frame(self.notebook, bg="#141824", padx=16, pady=14)
-        self.notebook.add(self.tab_shields, text=" Shields Info ")
-        self._setup_shields_tab()
 
     # --- TAB 1: SCANNER ---
     def _setup_scan_tab(self):
@@ -194,8 +226,7 @@ class SentinelDesktopApp:
 
         tk.Label(top, text="Target Path:", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg="#141824").pack(side="left", padx=(0, 8))
 
-        user_home = os.environ.get("USERPROFILE", "C:\\Users\\johns")
-        self.path_var = tk.StringVar(value=os.path.join(user_home, "Downloads"))
+        self.path_var = tk.StringVar(value=os.path.join(HOME, "Downloads"))
         self.entry_path = tk.Entry(top, textvariable=self.path_var, font=("Segoe UI", 9), bg="#0E121A", fg="#F8FAFC", insertbackground="#3B82F6", bd=1, relief="solid")
         self.entry_path.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
@@ -277,106 +308,6 @@ class SentinelDesktopApp:
         self.tree_vault.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-    # --- TAB 3: PROCESS GUARD ---
-    def _setup_process_tab(self):
-        top = tk.Frame(self.tab_process, bg="#141824")
-        top.pack(fill="x", pady=(0, 8))
-
-        tk.Label(top, text="Active Processes & Execution Behavior:", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg="#141824").pack(side="left")
-
-        ttk.Button(top, text="Audit Processes", style="Primary.TButton", command=self._audit_processes).pack(side="right", padx=2)
-        ttk.Button(top, text="Terminate Process", style="Danger.TButton", command=self._terminate_selected_process).pack(side="right", padx=2)
-
-        grid_frame = tk.Frame(self.tab_process, bg="#141824")
-        grid_frame.pack(fill="both", expand=True)
-
-        cols = ("threat", "score", "pid", "name", "parent", "memory", "indicators")
-        self.tree_process = ttk.Treeview(grid_frame, columns=cols, show="headings", selectmode="browse")
-        self.tree_process.heading("threat", text="Status")
-        self.tree_process.heading("score", text="Risk Score")
-        self.tree_process.heading("pid", text="PID")
-        self.tree_process.heading("name", text="Process Name")
-        self.tree_process.heading("parent", text="Parent Process")
-        self.tree_process.heading("memory", text="RAM (MB)")
-        self.tree_process.heading("indicators", text="Behavioral Indicators")
-
-        self.tree_process.column("threat", width=85, anchor="center")
-        self.tree_process.column("score", width=75, anchor="center")
-        self.tree_process.column("pid", width=65, anchor="center")
-        self.tree_process.column("name", width=140)
-        self.tree_process.column("parent", width=120)
-        self.tree_process.column("memory", width=75, anchor="center")
-        self.tree_process.column("indicators", width=360)
-
-        scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.tree_process.yview)
-        self.tree_process.configure(yscrollcommand=scroll.set)
-        self.tree_process.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-
-    # --- TAB 4: PERSISTENCE AUDIT ---
-    def _setup_persistence_tab(self):
-        top = tk.Frame(self.tab_persist, bg="#141824")
-        top.pack(fill="x", pady=(0, 8))
-
-        tk.Label(top, text="Windows Startup & AutoRun Audit:", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg="#141824").pack(side="left")
-        ttk.Button(top, text="Scan AutoRun Items", style="Primary.TButton", command=self._audit_persistence).pack(side="right", padx=2)
-
-        grid_frame = tk.Frame(self.tab_persist, bg="#141824")
-        grid_frame.pack(fill="both", expand=True)
-
-        cols = ("status", "source", "name", "target", "args")
-        self.tree_persist = ttk.Treeview(grid_frame, columns=cols, show="headings", selectmode="browse")
-        self.tree_persist.heading("status", text="Verdict")
-        self.tree_persist.heading("source", text="Location")
-        self.tree_persist.heading("name", text="Item Name")
-        self.tree_persist.heading("target", text="Target Path")
-        self.tree_persist.heading("args", text="Arguments / Flags")
-
-        self.tree_persist.column("status", width=90, anchor="center")
-        self.tree_persist.column("source", width=130)
-        self.tree_persist.column("name", width=140)
-        self.tree_persist.column("target", width=350)
-        self.tree_persist.column("args", width=220)
-
-        scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.tree_persist.yview)
-        self.tree_persist.configure(yscrollcommand=scroll.set)
-        self.tree_persist.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-
-    # --- TAB 5: NETWORK MONITOR ---
-    def _setup_network_tab(self):
-        top = tk.Frame(self.tab_network, bg="#141824")
-        top.pack(fill="x", pady=(0, 8))
-
-        tk.Label(top, text="Active Process Sockets & C2 Detection:", font=("Segoe UI", 9, "bold"), fg="#FFFFFF", bg="#141824").pack(side="left")
-        ttk.Button(top, text="Audit Sockets", style="Primary.TButton", command=self._audit_network).pack(side="right", padx=2)
-
-        grid_frame = tk.Frame(self.tab_network, bg="#141824")
-        grid_frame.pack(fill="both", expand=True)
-
-        cols = ("risk", "process", "pid", "proto", "local", "remote", "status")
-        self.tree_network = ttk.Treeview(grid_frame, columns=cols, show="headings", selectmode="browse")
-        self.tree_network.heading("risk", text="Risk")
-        self.tree_network.heading("process", text="Process")
-        self.tree_network.heading("pid", text="PID")
-        self.tree_network.heading("proto", text="Proto")
-        self.tree_network.heading("local", text="Local Address")
-        self.tree_network.heading("remote", text="Remote Address")
-        self.tree_network.heading("status", text="Socket Status")
-
-        self.tree_network.column("risk", width=85, anchor="center")
-        self.tree_network.column("process", width=140)
-        self.tree_network.column("pid", width=65, anchor="center")
-        self.tree_network.column("proto", width=60, anchor="center")
-        self.tree_network.column("local", width=220)
-        self.tree_network.column("remote", width=220)
-        self.tree_network.column("status", width=120, anchor="center")
-
-        scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.tree_network.yview)
-        self.tree_network.configure(yscrollcommand=scroll.set)
-        self.tree_network.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-
     # --- TAB 6: EXCLUSIONS ---
     def _setup_exclusions_tab(self):
         top = tk.Frame(self.tab_exclusions, bg="#141824")
@@ -405,42 +336,6 @@ class SentinelDesktopApp:
         scroll.pack(side="right", fill="y")
 
         self._refresh_exclusions()
-
-    # --- TAB 7: SHIELDS INFO ---
-    def _setup_shields_tab(self):
-        container = tk.Frame(self.tab_shields, bg="#141824")
-        container.pack(fill="both", expand=True)
-
-        tk.Label(container, text="Security Modules & Cascade Architecture", font=("Segoe UI", 11, "bold"), fg="#FFFFFF", bg="#141824").pack(anchor="w", pady=(0, 8))
-
-        summary = self.scanner.get_signatures_summary()
-
-        txt = tk.Text(container, bg="#0E121A", fg="#CBD5E1", font=("Segoe UI", 9), relief="solid", bd=1, padx=14, pady=12, wrap="word")
-        txt.pack(fill="both", expand=True)
-
-        body = (
-            "SHIELD STATUS AND HEURISTIC ENGINES\n"
-            "------------------------------------------------------------------------\n\n"
-            "1. Real-Time File System Shield [Active]\n"
-            "   Monitors Downloads, Desktop, Documents, and Temp for untrusted binaries via Win32 ReadDirectoryChangesW.\n\n"
-            "2. Process Execution Guard [Active]\n"
-            "   Inspects command-lines for LOLBins, parent-child execution anomalies, and memory injection APIs.\n\n"
-            "3. Network & C2 Socket Monitor [Active]\n"
-            "   Inspects active TCP/UDP endpoints, flagging known hacktool ports and reverse shells.\n\n"
-            "4. Startup & Persistence Auditor [Active]\n"
-            "   Scans Registry Run/RunOnce keys and user/system Startup directories for stealth auto-launch items.\n\n"
-            "5. Dual-Invariant Ransomware Defense [Active]\n"
-            "   Detects rapid high-entropy bursts (<= 3 writes/s) while preserving developer git/node_modules workflows.\n\n"
-            "6. Anti-Tamper & Self-Defense Guard [Active]\n"
-            "   Validates SHA-256 signatures of all core engine binaries and definition manifests against alteration.\n\n"
-            f"7. Fast Reputation Cache: {summary['tier1_cache_entries']:,} signatures loaded (< 0.01ms latency)\n\n"
-            f"8. Active Threat Pattern Signatures ({summary['tier3_signatures_count']} rules):\n"
-        )
-        for sig in summary["signatures"]:
-            body += f"   • {sig}\n"
-
-        txt.insert("1.0", body)
-        txt.configure(state="disabled")
 
     def _build_footer(self):
         foot = tk.Frame(self.root, bg="#141824", height=24, padx=20, pady=3)
@@ -472,88 +367,6 @@ class SentinelDesktopApp:
             for m in report["missing_files"]:
                 msg += f"Missing: {m}\n"
             messagebox.showwarning("Integrity Guard: Tamper Detected", msg)
-
-    def _audit_processes(self):
-        def worker():
-            procs = self.proc_monitor.audit_running_processes(limit=80)
-            self.root.after(0, self._populate_processes, procs)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _populate_processes(self, procs):
-        self.tree_process.delete(*self.tree_process.get_children())
-        for p in procs:
-            ind_str = ", ".join(p["indicators"]) if p["indicators"] else "Normal behavior"
-            row = self.tree_process.insert(
-                "",
-                "end",
-                iid=str(p["pid"]),
-                values=(p["threat_level"], f"{p['risk_score']}/100", p["pid"], p["name"], p["parent"] or "-", p["memory_mb"], ind_str)
-            )
-            if p["threat_level"] == "HIGH_RISK":
-                self.tree_process.tag_configure("high", foreground="#F43F5E")
-                self.tree_process.item(row, tags=("high",))
-            elif p["threat_level"] == "SUSPICIOUS":
-                self.tree_process.tag_configure("susp", foreground="#F59E0B")
-                self.tree_process.item(row, tags=("susp",))
-
-    def _terminate_selected_process(self):
-        sel = self.tree_process.selection()
-        if not sel:
-            messagebox.showinfo("Select Process", "Please select a process from the table to terminate.")
-            return
-        pid = int(sel[0])
-        if messagebox.askyesno("Confirm Termination", f"Terminate process PID {pid}?"):
-            ok = self.proc_monitor.terminate_process(pid)
-            if ok:
-                messagebox.showinfo("Process Terminated", f"Successfully terminated PID {pid}.")
-                self._audit_processes()
-            else:
-                messagebox.showerror("Error", f"Failed to terminate PID {pid} (Access denied or process already exited).")
-
-    def _audit_persistence(self):
-        def worker():
-            scanner_p = PersistenceScanner(self.scanner)
-            items = scanner_p.audit_all()
-            self.root.after(0, self._populate_persistence, items)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _populate_persistence(self, items):
-        self.tree_persist.delete(*self.tree_persist.get_children())
-        for it in items:
-            is_threat = it.get("is_threat", False)
-            status = "THREAT" if is_threat else "CLEAN"
-            row = self.tree_persist.insert(
-                "",
-                "end",
-                values=(status, it.get("location", ""), it.get("name", ""), it.get("target_path", ""), it.get("command", "") or "-")
-            )
-            if is_threat:
-                self.tree_persist.tag_configure("susp_persist", foreground="#F43F5E")
-                self.tree_persist.item(row, tags=("susp_persist",))
-
-    def _audit_network(self):
-        def worker():
-            conns = self.net_monitor.audit_connections()
-            self.root.after(0, self._populate_network, conns)
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _populate_network(self, conns):
-        self.tree_network.delete(*self.tree_network.get_children())
-        for c in conns:
-            row = self.tree_network.insert(
-                "",
-                "end",
-                values=(c["threat_level"], c["process"], c["pid"], c["protocol"], c["local_address"], c["remote_address"] or "*", c["status"])
-            )
-            if c["threat_level"] == "HIGH_RISK":
-                self.tree_network.tag_configure("c2_alert", foreground="#F43F5E")
-                self.tree_network.item(row, tags=("c2_alert",))
-            elif c["threat_level"] == "SUSPICIOUS":
-                self.tree_network.tag_configure("c2_susp", foreground="#F59E0B")
-                self.tree_network.item(row, tags=("c2_susp",))
 
     def _refresh_exclusions(self):
         self.tree_exclusions.delete(*self.tree_exclusions.get_children())
@@ -595,11 +408,10 @@ class SentinelDesktopApp:
             self.path_var.set(f)
 
     def _set_path(self, preset: str):
-        home = os.environ.get("USERPROFILE", "C:\\Users\\johns")
         if preset == "Temp":
-            p = os.environ.get("TEMP", os.path.join(home, "AppData\\Local\\Temp"))
+            p = os.environ.get("TEMP", os.path.join(HOME, "AppData", "Local", "Temp"))
         else:
-            p = os.path.join(home, preset)
+            p = os.path.join(HOME, preset)
         self.path_var.set(p)
 
     def _quick_scan(self, preset: str):
@@ -621,42 +433,46 @@ class SentinelDesktopApp:
         threading.Thread(target=self._scan_worker, args=(path,), daemon=True).start()
 
     def _scan_worker(self, path: str):
+        # Runs on a worker thread: it only posts to ui_events, never touches Tk.
         t0 = time.time()
-        files = []
+        files: List[str] = []
         if os.path.isfile(path):
             files = [path]
         else:
             for root, _, fs in os.walk(path):
-                for f in fs:
-                    files.append(os.path.join(root, f))
-                    if len(files) >= 1500:
-                        break
-                if len(files) >= 1500:
+                files.extend(os.path.join(root, f) for f in fs)
+                if len(files) >= MAX_SCAN_FILES:
+                    files = files[:MAX_SCAN_FILES]
                     break
 
         total = len(files)
-        scanned = 0
         threats = 0
+        errors = 0
+        progress_step = max(total // 100, 1)
 
-        for fp in files:
-            scanned += 1
+        for scanned, fp in enumerate(files, start=1):
             try:
                 verdict = self.scanner.scan_file(fp)
-                if verdict.is_malicious():
-                    threats += 1
-                    self.vault.isolate_file(fp, reason=verdict.reason)
-                    self.root.after(0, self._add_scan_row, fp, "MALICIOUS", verdict.reason, verdict.tier, verdict.scan_time_ms)
-                elif scanned <= 8 or scanned % 40 == 0:
-                    self.root.after(0, self._add_scan_row, fp, "CLEAN", "Clean", verdict.tier, verdict.scan_time_ms)
             except Exception:
-                pass
-
-            pct = int((scanned / max(total, 1)) * 100)
-            self.root.after(0, self._update_progress, pct, f"Inspected {scanned}/{total} files...")
+                errors += 1
+                continue
+            if verdict.is_malicious():
+                threats += 1
+                self.vault.isolate_file(fp, reason=verdict.reason)
+                self.ui_events.put(("scan_row", fp, "MALICIOUS", verdict.reason, verdict.tier, verdict.scan_time_ms))
+            elif scanned <= 8 or scanned % 40 == 0:
+                self.ui_events.put(("scan_row", fp, "CLEAN", "Clean", verdict.tier, verdict.scan_time_ms))
+            if scanned % progress_step == 0 or scanned == total:
+                pct = int(scanned / max(total, 1) * 100)
+                self.ui_events.put(("scan_progress", pct, f"Inspected {scanned}/{total} files..."))
 
         elapsed = round(time.time() - t0, 2)
-        summary = f"Scan complete: {scanned} files inspected in {elapsed}s • {threats} threats found."
-        self.root.after(0, self._scan_done, summary)
+        summary = f"Scan complete: {total - errors} files inspected in {elapsed}s • {threats} threats found."
+        if errors:
+            summary += f" • {errors} could not be read"
+        if total >= MAX_SCAN_FILES:
+            summary += f" • stopped at the first {MAX_SCAN_FILES} files"
+        self.ui_events.put(("scan_done", summary))
 
     def _add_scan_row(self, fp: str, verdict: str, threat: str, tier: int, latency: float):
         row = self.tree_scan.insert("", "end", values=(fp, verdict, threat, f"Tier {tier}", f"{latency:.3f} ms"))
@@ -691,12 +507,125 @@ class SentinelDesktopApp:
     def refresh_metrics(self):
         items = self.vault.list_quarantined()
         active = sum(1 for i in items if not i.get("is_restored"))
-        self.lbl_cache.config(text=f"Cache: {len(self.scanner.cache):,} signatures")
+        self.lbl_cache.config(text=f"Reputation cache: {len(self.scanner.cache):,} files")
         self.lbl_threats.config(text=f"Quarantined: {active} item(s)")
 
-    def _auto_refresh(self):
+    # --- LIVE PROTECTION, TRAY & EVENT LOOP ---
+    def _poll(self):
+        try:
+            self._drain_ui_events()
+            self._drain_tray_commands()
+            if self.instance is not None and self.instance.show_requested():
+                self.show_window()
+            self._polls += 1
+            if self._polls % REFRESH_EVERY_POLLS == 1:
+                self.refresh_protection()
+                self.refresh_metrics()
+        finally:
+            self.root.after(POLL_MS, self._poll)
+
+    def _drain_ui_events(self):
+        while True:
+            try:
+                event = self.ui_events.get_nowait()
+            except queue.Empty:
+                return
+            kind, args = event[0], event[1:]
+            if kind == "threat":
+                self._on_threat(*args)
+            elif kind == "scan_row":
+                self._add_scan_row(*args)
+            elif kind == "scan_progress":
+                self._update_progress(*args)
+            elif kind == "scan_done":
+                self._scan_done(*args)
+            elif kind == "call":
+                args[0]()
+
+    def _drain_tray_commands(self):
+        while True:
+            try:
+                command = self.tray_queue.get_nowait()
+            except queue.Empty:
+                return
+            if command == tray_commands.OPEN:
+                self.show_window()
+            elif command == tray_commands.TOGGLE_PROTECTION:
+                self._toggle_all_protection()
+            elif command == tray_commands.SCAN_DOWNLOADS:
+                self.show_window()
+                self._quick_scan("Downloads")
+            elif command == tray_commands.QUIT:
+                self.quit()
+
+    def _on_threat(self, title: str, message: str, where: str):
+        log_threat(title, message, where)
+        if self.tray is not None:
+            self.tray.notify(title, message)
+        self.refresh_quarantine()
         self.refresh_metrics()
-        self.root.after(4000, self._auto_refresh)
+
+    def _check_integrity(self):
+        ok = self.integrity_guard.verify_integrity().get("is_intact")
+        self.integrity_ok = bool(ok)
+
+    def refresh_protection(self):
+        states = self.protection.states()
+        summary = summarize(states, self.integrity_ok)
+        fg, bg = LEVEL_COLORS[summary.level]
+        self.status_pill.config(text=f"● {summary.pill}", fg=fg, bg=bg)
+        self.lbl_headline.config(text=summary.headline)
+        self.lbl_detail.config(text=summary.detail)
+        any_on = any(s.running for s in states)
+        self.btn_protection.config(text="Turn protection off" if any_on else "Turn protection on")
+        counters = self.protection.counters()
+        self.lbl_activity.config(
+            text=f"Since launch: {counters['files_inspected']:,} files and "
+                 f"{counters['processes_inspected']:,} processes checked")
+        self.protection_tab.update_shields(states)
+        self.protection_tab.update_events(self.protection.recent_events())
+        if self.tray is not None:
+            self.tray.update(summary.level, f"SentinelCore: {summary.pill}", any_on)
+
+    def _toggle_shield(self, name: str, turn_on: bool):
+        if turn_on:
+            self.protection.start(name)
+        else:
+            self.protection.stop(name)
+        self.refresh_protection()
+
+    def _toggle_all_protection(self):
+        if any(s.running for s in self.protection.states()):
+            if not messagebox.askyesno(
+                    "Turn off protection",
+                    "Stop scanning new files and processes until you turn protection back on?"):
+                return
+            self.protection.stop()
+        else:
+            self.protection.start()
+        self.refresh_protection()
+
+    def show_window(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.attributes("-topmost", True)
+        self.root.after(400, lambda: self.root.attributes("-topmost", False))
+        self.root.focus_force()
+
+    def hide_to_tray(self):
+        self.root.withdraw()
+        if not self._told_about_tray and self.tray is not None:
+            self._told_about_tray = True
+            self.tray.notify("SentinelCore is still protecting you",
+                             "It keeps running in the system tray. Right-click the shield icon to quit.")
+
+    def quit(self):
+        self.protection.stop()
+        if self.tray is not None:
+            self.tray.stop()
+        if self.instance is not None:
+            self.instance.release()
+        self.root.destroy()
 
     def _restore_threat(self):
         sel = self.tree_vault.selection()
@@ -733,9 +662,20 @@ class SentinelDesktopApp:
             self.refresh_quarantine()
             self.refresh_metrics()
 
-def main():
+def main(argv: Optional[List[str]] = None):
+    parser = argparse.ArgumentParser(description="SentinelCore desktop app")
+    parser.add_argument("--minimized", action="store_true",
+                        help="Start in the system tray without opening the window (used at login)")
+    args = parser.parse_args(argv)
+
+    instance = SingleInstance()
+    if not instance.is_primary:
+        instance.ask_primary_to_show()
+        instance.release()
+        return
+
     root = tk.Tk()
-    app = SentinelDesktopApp(root)
+    SentinelDesktopApp(root, start_hidden=args.minimized, instance=instance)
     root.mainloop()
 
 if __name__ == "__main__":

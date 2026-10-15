@@ -18,16 +18,19 @@ def notify_threat_blocked(title: str, message: str, threat_path: str = ""):
     print(f"[!] Status:  Neutralized and isolated to Quarantine Vault.")
     print(f"[!] ==================================================================\n")
 
-    # Append to local audit log
+    log_threat(title, message, threat_path)
+    _show_toast(title, message)
+
+
+def log_threat(title: str, message: str, threat_path: str = ""):
+    """Appends a neutralised threat to the local audit log."""
     log_dir = os.path.join(os.environ.get("ProgramData", "C:\\ProgramData"), "SentinelCore")
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, "threats.log")
-    
+
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}] [THREAT_NEUTRALIZED] {title} - {message} ({threat_path})\n")
-
-    _show_toast(title, message)
 
 
 # The toast text is attacker controlled (file and process names), so it is

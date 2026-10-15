@@ -54,11 +54,8 @@ def main():
 
     # 1. Check if GUI desktop app requested
     if args.gui:
-        import tkinter as tk
-        from sentinel_ui.desktop_gui import SentinelDesktopApp
-        root = tk.Tk()
-        app = SentinelDesktopApp(root)
-        root.mainloop()
+        from sentinel_ui.desktop_gui import main as run_desktop_app
+        run_desktop_app([])
         return
 
     # 2. Initialize Core Engines
