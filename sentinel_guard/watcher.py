@@ -4,6 +4,7 @@ Monitors user Downloads, Desktop, Documents, and Staging paths for suspicious fi
 new executables, and high-frequency ransomware alterations using Win32 ReadDirectoryChangesW.
 """
 
+import logging
 import os
 import time
 import threading
@@ -13,6 +14,9 @@ import win32con
 
 from sentinel_scanner.engine import SentinelScanner, ScanVerdict, VERDICT_ALLOW
 from sentinel_vault.vault import QuarantineVault
+
+logger = logging.getLogger(__name__)
+NOTIFY_BUFFER_SIZE = 32768
 
 MONITORED_EXTENSIONS = {
     ".exe", ".dll", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".hta", ".pif",
@@ -82,12 +86,13 @@ class FilesystemWatcher:
             win32con.FILE_NOTIFY_CHANGE_SIZE
         )
 
-        buffer = bytearray(32768)
         while self.is_running:
             try:
+                # Pass a buffer SIZE. Given a buffer object, pywin32 fills it and
+                # returns None, and iterating None raised on every event.
                 results = win32file.ReadDirectoryChangesW(
                     hDir,
-                    buffer,
+                    NOTIFY_BUFFER_SIZE,
                     True,  # watch subtree
                     flags,
                     None,
@@ -98,7 +103,8 @@ class FilesystemWatcher:
                     # Check action: 1=Added, 3=Modified, 4=Renamed Old, 5=Renamed New
                     if action in (1, 3, 5):
                         self._handle_file_event(full_path)
-            except Exception:
+            except Exception as err:
+                logger.warning("Watching %s failed: %s", path, err)
                 time.sleep(0.5)
 
     def _handle_file_event(self, file_path: str):

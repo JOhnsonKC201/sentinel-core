@@ -19,7 +19,7 @@ import sqlite3
 import re
 from typing import BinaryIO, Callable, Tuple, Dict, Any, Optional
 
-from . import heuristics
+from . import heuristics, trust
 from .exclusions import ExclusionManager
 from .heuristics import HeuristicAnalyzer, rules_fingerprint
 
@@ -305,14 +305,24 @@ class SentinelScanner:
         return ScanVerdict(cached, "Tier1:ReputationCacheHit", 1, sha256_hash, 0.0, _elapsed_ms(t0))
 
     def _evaluate(self, sha256_hash: str, head: bytes, filename: str, t0: int,
-                  match_signature: Callable[[], Optional[str]]) -> ScanVerdict:
+                  match_signature: Callable[[], Optional[str]],
+                  is_trusted: Optional[Callable[[], bool]] = None) -> ScanVerdict:
         """Runs Tier 2 and Tier 3 on unknown content and records the outcome.
 
         `head` is the start of the content; `match_signature` covers all of it.
+        `is_trusted` is asked only when a guessing tier (entropy, heuristics)
+        would flag the file; signature matches never consult it.
         """
         def conclude(verdict: int, reason: str, tier: int, entropy: float) -> ScanVerdict:
             self.record_reputation(sha256_hash, verdict, reason)
             return ScanVerdict(verdict, reason, tier, sha256_hash, entropy, _elapsed_ms(t0))
+
+        trusted_answer: Dict[str, bool] = {}
+
+        def trusted() -> bool:
+            if "value" not in trusted_answer:
+                trusted_answer["value"] = bool(is_trusted and is_trusted())
+            return trusted_answer["value"]
 
         # Tier 2: PE Inspection & 64KB Entropy Gating
         header_window = head[:ENTROPY_WINDOW]
@@ -320,7 +330,7 @@ class SentinelScanner:
         ent = calculate_shannon_entropy(header_window)
 
         # High-entropy packed / encrypted executable detection
-        if pe_info.get("is_pe"):
+        if pe_info.get("is_pe") and not trusted():
             if pe_info.get("is_upx_packed") and ent > ENTROPY_GATE_UPX:
                 return conclude(VERDICT_QUARANTINE, f"Tier2:UPXPackedBinary(H={ent:.2f})", 2, ent)
             if ent > ENTROPY_GATE_PACKED:
@@ -333,11 +343,11 @@ class SentinelScanner:
 
         # Tier 3b: Multi-Signal Heuristic Risk Scoring (first 2MB to keep latency bounded)
         heur = self.heuristics.analyze_bytes(head[:HEURISTIC_WINDOW], filename)
-        if heur["is_suspicious"]:
+        if heur["is_suspicious"] and not trusted():
             return conclude(VERDICT_QUARANTINE, f"Tier3:Heuristic.{heur['risk_level']}(Score={heur['score']})", 3, ent)
 
         # Passed all checks -> Clean
-        return conclude(VERDICT_ALLOW, "Tier3:Clean", 3, ent)
+        return conclude(VERDICT_ALLOW, "Tier3:Clean(TrustedPublisher)" if trusted_answer.get("value") else "Tier3:Clean", 3, ent)
 
     def scan_bytes(self, data: bytes, filename: str = "") -> ScanVerdict:
         """Evaluates a byte buffer through the 3-tier cascade."""
@@ -349,7 +359,8 @@ class SentinelScanner:
             return known
         return self._evaluate(sha256_hash, data, filename, t0, lambda: find_signature(data))
 
-    def _scan_large_stream(self, stream: BinaryIO, filename: str) -> ScanVerdict:
+    def _scan_large_stream(self, stream: BinaryIO, filename: str,
+                           is_trusted: Optional[Callable[[], bool]] = None) -> ScanVerdict:
         """Hashes and signature-matches an open file in one streaming pass.
 
         A single pass keeps the hash and the scanned bytes in agreement even if
@@ -376,7 +387,7 @@ class SentinelScanner:
         known = self._lookup_known(sha256_hash, t0)
         if known is not None:
             return known
-        return self._evaluate(sha256_hash, head, filename, t0, lambda: sig_name)
+        return self._evaluate(sha256_hash, head, filename, t0, lambda: sig_name, is_trusted)
 
     def scan_file(self, file_path: str) -> ScanVerdict:
         """Reads a file safely with streaming chunks for large files."""
@@ -389,6 +400,10 @@ class SentinelScanner:
 
         _, ext = os.path.splitext(file_path.lower())
 
+        def is_trusted() -> bool:
+            # Looked up through the module so tests can substitute it.
+            return trust.is_protected_system_path(file_path) or trust.has_valid_signature(file_path)
+
         try:
             # One handle for the media peek and the scan, so both see the same file
             with open(file_path, "rb") as f:
@@ -399,9 +414,15 @@ class SentinelScanner:
                     f.seek(0)
 
                 if os.fstat(f.fileno()).st_size > IN_MEMORY_SCAN_LIMIT:
-                    return self._scan_large_stream(f, os.path.basename(file_path))
+                    return self._scan_large_stream(f, os.path.basename(file_path), is_trusted)
                 data = f.read()
-            return self.scan_bytes(data, os.path.basename(file_path))
+            t0 = time.perf_counter_ns()
+            sha256_hash = hashlib.sha256(data).hexdigest()
+            known = self._lookup_known(sha256_hash, t0)
+            if known is not None:
+                return known
+            return self._evaluate(sha256_hash, data, os.path.basename(file_path), t0,
+                                  lambda: find_signature(data), is_trusted)
 
         except Exception as e:
             # Fail-open on locked system handles

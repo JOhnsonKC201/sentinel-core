@@ -1,0 +1,6 @@
+# Runtime dependencies for SentinelCore (Windows only)
+psutil==7.2.2
+cryptography==46.0.7
+pywin32==311
+pystray==0.19.5
+Pillow==11.3.0

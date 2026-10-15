@@ -1,7 +1,7 @@
 """
 SentinelCore Master Service & Personal Antivirus Launcher
 Starts real-time filesystem protection, ransomware defense, process execution guard,
-and the management dashboard.
+and the desktop management app.
 """
 
 import os
@@ -19,7 +19,6 @@ from sentinel_guard.watcher import FilesystemWatcher
 from sentinel_guard.process_monitor import ProcessMonitor
 from sentinel_ui.notifications import notify_threat_blocked
 from sentinel_ui.dashboard import SentinelConsole
-from sentinel_ui.web_dashboard import SentinelWebServer
 
 def alert_handler(file_path: str, verdict: ScanVerdict, vault_id: str):
     notify_threat_blocked(
@@ -46,22 +45,17 @@ def main():
     parser = argparse.ArgumentParser(description="SentinelCore Personal Antivirus & Malware Prevention Suite")
     parser.add_argument("--scan", type=str, help="Run an on-demand scan on a specific file or folder")
     parser.add_argument("--daemon", action="store_true", help="Run headlessly as background guard")
-    parser.add_argument("--web", action="store_true", help="Launch interactive web management dashboard in browser")
     parser.add_argument("--gui", action="store_true", help="Launch native desktop GUI application")
     parser.add_argument("--autorun", action="store_true", help="Audit Windows startup and persistence autorun entries")
     parser.add_argument("--net", action="store_true", help="Audit active network sockets for suspicious C2 connections")
     parser.add_argument("--procs", action="store_true", help="Audit currently running processes for LOLBins and anomalies")
     parser.add_argument("--integrity", action="store_true", help="Verify SentinelCore anti-tamper self-defense integrity")
-    parser.add_argument("--port", type=int, default=8765, help="Port for web dashboard (default: 8765)")
     args = parser.parse_args()
 
     # 1. Check if GUI desktop app requested
     if args.gui:
-        import tkinter as tk
-        from sentinel_ui.desktop_gui import SentinelDesktopApp
-        root = tk.Tk()
-        app = SentinelDesktopApp(root)
-        root.mainloop()
+        from sentinel_ui.desktop_gui import main as run_desktop_app
+        run_desktop_app([])
         return
 
     # 2. Initialize Core Engines
@@ -151,16 +145,6 @@ def main():
         on_process_blocked=process_blocked_handler
     )
 
-    # 4. Initialize Web Dashboard Server
-    web_server = SentinelWebServer(
-        scanner=scanner,
-        vault=vault,
-        fs_watcher=fs_watcher,
-        proc_monitor=proc_monitor,
-        ransomware_shield=ransomware_shield,
-        port=args.port
-    )
-
     # 5. Start Background Real-Time Protection
     console.print_banner()
     print("[+] Starting Real-Time Filesystem Guard (Downloads, Desktop, Documents, Temp)...", flush=True)
@@ -172,11 +156,8 @@ def main():
     print("[+] Starting Dual-Invariant Ransomware Shield...", flush=True)
     console.print_status(is_guard_active=True)
 
-    # Start Web Dashboard
-    web_server.start(open_browser=args.web)
-
     if args.daemon:
-        print("[*] Running in headless daemon mode. Web UI active. Press Ctrl+C to terminate.", flush=True)
+        print("[*] Running in headless daemon mode. Press Ctrl+C to terminate.", flush=True)
         try:
             while True:
                 time.sleep(1)
@@ -184,7 +165,6 @@ def main():
             print("\n[*] Stopping SentinelCore shields...", flush=True)
             fs_watcher.stop()
             proc_monitor.stop()
-            web_server.stop()
             return
 
     # Interactive Console Loop
@@ -198,7 +178,6 @@ def main():
     print("  stats                - Display vault and detection metrics")
     print("  signatures           - List active threat signature rules")
     print("  events               - Display recent security telemetry event log")
-    print("  web                  - Open Web Management Dashboard in default browser")
     print("  exit                 - Stop shields and exit\n", flush=True)
 
     try:
@@ -239,19 +218,14 @@ def main():
                 console.show_signatures()
             elif action == "events":
                 console.show_recent_events(fs_watcher, proc_monitor)
-            elif action == "web":
-                import webbrowser
-                webbrowser.open(f"http://127.0.0.1:{args.port}")
-                print(f"[+] Opened Web Dashboard in browser: http://127.0.0.1:{args.port}", flush=True)
             else:
-                print(f"[!] Unknown command: {action}. Type 'scan', 'status', 'quarantine', 'restore', 'delete', 'purge', 'stats', 'signatures', 'events', 'web', or 'exit'.", flush=True)
+                print(f"[!] Unknown command: {action}. Type 'scan', 'status', 'quarantine', 'restore', 'delete', 'purge', 'stats', 'signatures', 'events', or 'exit'.", flush=True)
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
         print("\n[*] Stopping SentinelCore shields...", flush=True)
         fs_watcher.stop()
         proc_monitor.stop()
-        web_server.stop()
         print("[+] All shields stopped safely.", flush=True)
 
 if __name__ == "__main__":
