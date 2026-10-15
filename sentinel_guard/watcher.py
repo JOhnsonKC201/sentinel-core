@@ -98,14 +98,23 @@ class FilesystemWatcher:
                     None,
                     None
                 )
-                for action, filename in results:
-                    full_path = os.path.join(path, filename)
-                    # Check action: 1=Added, 3=Modified, 4=Renamed Old, 5=Renamed New
-                    if action in (1, 3, 5):
-                        self._handle_file_event(full_path)
+                self._process_batch(path, results)
             except Exception as err:
                 logger.warning("Watching %s failed: %s", path, err)
                 time.sleep(0.5)
+
+    def _process_batch(self, path: str, results):
+        """Handles one notification batch. A file that fails (say, another
+        scanner removed it mid-quarantine) must not drop the rest of the batch."""
+        for action, filename in results:
+            # Check action: 1=Added, 3=Modified, 4=Renamed Old, 5=Renamed New
+            if action not in (1, 3, 5):
+                continue
+            full_path = os.path.join(path, filename)
+            try:
+                self._handle_file_event(full_path)
+            except Exception as err:
+                logger.warning("Could not handle %s: %s", full_path, err)
 
     def _handle_file_event(self, file_path: str):
         """Evaluates a newly modified or created file."""
@@ -124,8 +133,8 @@ class FilesystemWatcher:
         self.events_processed += 1
         verdict = self.scanner.scan_file(file_path)
         if verdict.is_malicious():
-            self.threats_blocked += 1
             vault_id = self.vault.isolate_file(file_path, reason=verdict.reason)
+            self.threats_blocked += 1
             event_record = {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "type": "FILESYSTEM_THREAT_ISOLATED",

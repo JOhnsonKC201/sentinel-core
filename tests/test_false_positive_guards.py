@@ -234,13 +234,24 @@ def test_session_critical_processes_are_never_killed(scanner, vault, monkeypatch
 EICAR = b"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 
 
-def test_file_shield_quarantines_a_dropped_threat(scanner, vault, workdir):
+@pytest.fixture
+def shield_dir():
+    # Not under %TEMP%: an installed SentinelCore watches it and would quarantine
+    # the EICAR file before the shield under test sees it.
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build")
+    os.makedirs(base, exist_ok=True)
+    path = tempfile.mkdtemp(prefix="shield_test_", dir=base)
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def test_file_shield_quarantines_a_dropped_threat(scanner, vault, shield_dir):
     # ReadDirectoryChangesW was given a buffer instead of a size, returned None,
     # and the TypeError was swallowed: the shield never handled a single event.
     import time
     from sentinel_guard.watcher import FilesystemWatcher
 
-    watch = os.path.join(workdir, "Downloads")
+    watch = os.path.join(shield_dir, "Downloads")
     os.makedirs(watch)
     alerts = []
     shield = FilesystemWatcher(scanner=scanner, vault=vault, watch_dirs=[watch],
@@ -281,3 +292,29 @@ def test_malicious_command_line_never_quarantines_the_interpreter(scanner, vault
     assert killed == [True]
     assert os.path.exists(interpreter)
     assert vault.list_quarantined() == []
+
+
+def test_one_failed_file_does_not_drop_the_rest_of_the_batch(scanner, vault, shield_dir):
+    # Another scanner removing a file mid-quarantine raised out of the batch loop,
+    # so every later file in the same notification went unscanned.
+    from sentinel_guard.watcher import FilesystemWatcher
+
+    first = os.path.join(shield_dir, "gone.bat")
+    second = os.path.join(shield_dir, "second.bat")
+    for p in (first, second):
+        with open(p, "wb") as f:
+            f.write(EICAR)
+    shield = FilesystemWatcher(scanner=scanner, vault=vault, watch_dirs=[shield_dir])
+
+    real_isolate = vault.isolate_file
+
+    def raced_isolate(path, reason=""):
+        if path == first:
+            os.remove(path)
+        return real_isolate(path, reason=reason)
+
+    vault.isolate_file = raced_isolate
+    shield._process_batch(shield_dir, [(1, "gone.bat"), (1, "second.bat")])
+
+    assert not os.path.exists(second)
+    assert shield.threats_blocked == 1
