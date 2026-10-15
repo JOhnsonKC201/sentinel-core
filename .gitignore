@@ -7,3 +7,5 @@ __pycache__/
 .venv/
 env/
 .pytest_cache/
+build/
+dist/

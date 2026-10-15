@@ -1,18 +1,18 @@
 {
-  "created_at": "2026-10-14 21:13:51",
+  "created_at": "2026-10-14 21:23:55",
   "file_count": 12,
   "hashes": {
     "sentinel_scanner\\engine.py": "bef092e188041bcc48093ac60f75706b74f1559d7214030f0418e65ddc51cb0c",
     "sentinel_scanner\\heuristics.py": "d257bb56a692755e2a2005acd6f4fc272c3bdf9bcffc37f4bb8fba568520f5f0",
     "sentinel_scanner\\persistence.py": "927f39add3595e176f2aa87375f655007c1ae483c08f7f67b2f8803b9915d8af",
     "sentinel_scanner\\exclusions.py": "1776c08a3981914a8e612346fa23666a2d9eaba583a38246b7b9c5be1e06c928",
-    "sentinel_guard\\watcher.py": "0b14773bc5fcf5dd278c48e3dbad09a0d579d0ff5daed0925c3ae40290c1702a",
-    "sentinel_guard\\process_monitor.py": "730cd4cdfab5b808897c119a074f95c6037038e66c7d7cdb4bd07caba4c13060",
+    "sentinel_guard\\watcher.py": "cd991458a5a633f89ca542f1466e8aabeeddc40f573c822961c6c10eea8079bc",
+    "sentinel_guard\\process_monitor.py": "58b3013c1a301d05ea859cf2eb07c5f767eb1f822ea98a5fd099e2b14147a165",
     "sentinel_guard\\network_monitor.py": "89e2567efd32f877b6e60294bde8cc6433ab531ca55e51dff6ee73baf06add7b",
     "sentinel_vault\\vault.py": "2ba48c5be879ca8719b03d5271eb8dd5b1a1eb180ab3ce7e83518c8649cf3424",
     "sentinel_scanner\\trust.py": "33fb57f6a7f71ce9f304f0ef1d6f2b28c97725b2b5785ef7feb36ff2a5b045b7",
     "sentinel_guard\\protection.py": "8c316eb55b5f0b37befb63052e34edb860cb8a9bc7fda977468fab26298fc15a",
     "sentinel_behavior\\ransomware_shield.py": "6e759e82b0304a2fb9ad6ac2c972fa5db4e5f66d41e7f187af9fa9f64358d7da",
-    "sentinel_ui\\desktop_gui.py": "f10daf60a0338a904370009fbf0cd656f07c36741eb2f8542edd775908a9e0dd"
+    "sentinel_ui\\desktop_gui.py": "250194c5505582d9af751cafddadd5b7d20ceebdf44d494a4a85a2e579766555"
   }
 }

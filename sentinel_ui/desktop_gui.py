@@ -13,6 +13,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from typing import List, Optional
 
+from PIL import ImageTk
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from sentinel_scanner.engine import SentinelScanner
@@ -27,8 +29,8 @@ from sentinel_ui.audit_tabs import build_network_tab, build_persistence_tab, bui
 from sentinel_ui.notifications import log_threat
 from sentinel_ui.protection_tab import ProtectionTab
 from sentinel_ui.single_instance import SingleInstance
-from sentinel_ui.status import LEVEL_COLORS, summarize
-from sentinel_ui.tray import SentinelTray
+from sentinel_ui.status import LEVEL_COLORS, PROTECTED, summarize
+from sentinel_ui.tray import SentinelTray, draw_shield
 
 POLL_MS = 250
 REFRESH_EVERY_POLLS = 8  # about every two seconds
@@ -45,6 +47,8 @@ class SentinelDesktopApp:
         self.root.geometry("1080x730")
         self.root.minsize(920, 620)
         self.root.configure(bg="#0E121A")
+        self._window_icon = ImageTk.PhotoImage(draw_shield(PROTECTED))  # keep a reference: Tk does not
+        self.root.iconphoto(True, self._window_icon)
 
         # Engines
         self.vault = QuarantineVault()
