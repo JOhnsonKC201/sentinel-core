@@ -11,9 +11,19 @@ from typing import Set, Callable, Optional
 import psutil
 
 from sentinel_scanner.engine import SentinelScanner, ScanVerdict
+from sentinel_scanner.trust import is_protected_system_path
 from sentinel_vault.vault import QuarantineVault
 
 import collections
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Killing any of these logs the user out or bugchecks Windows.
+SESSION_CRITICAL = frozenset({
+    "winlogon.exe", "csrss.exe", "lsass.exe", "wininit.exe", "smss.exe",
+    "services.exe", "svchost.exe", "fontdrvhost.exe", "dwm.exe", "system", "registry",
+})
 
 class ProcessMonitor:
     def __init__(
@@ -50,17 +60,64 @@ class ProcessMonitor:
 
     def _monitor_loop(self):
         while self.is_running:
-            try:
-                current_pids = set(psutil.pids())
-                new_pids = current_pids - self.known_pids
-                
-                for pid in new_pids:
-                    self._inspect_new_process(pid)
-
-                self.known_pids = current_pids
-            except Exception:
-                pass
+            self._poll_once()
             time.sleep(self.poll_interval)
+
+    def _poll_once(self):
+        try:
+            current_pids = set(psutil.pids())
+        except Exception as err:
+            logger.warning("Process list unavailable: %s", err)
+            return
+        new_pids = current_pids - self.known_pids
+        # Mark every PID seen before inspecting any of them. Otherwise one
+        # failure skips this line and the same process is "new" again on the
+        # next poll, forever.
+        self.known_pids = current_pids
+        for pid in new_pids:
+            try:
+                self._inspect_new_process(pid)
+            except Exception as err:
+                logger.warning("Inspecting PID %s failed: %s", pid, err)
+
+    def _record(self, event_type: str, pid: int, proc_name: str, reason: str, details: str):
+        self.recent_events.append({
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "type": event_type,
+            "pid": pid,
+            "process": proc_name,
+            "reason": reason,
+            "details": details,
+        })
+
+    def _block(self, proc, pid: int, proc_name: str, exe_path: str, verdict: ScanVerdict,
+               event_type: str, details: str, malicious_cmdline: bool = False):
+        """Kill the process and quarantine its binary, within limits for Windows itself.
+
+        A Windows binary flagged on its file contents is a false positive by
+        construction (SearchProtocolHost.exe): report it, never act. A Windows
+        binary run with a malicious command line is a LOLBin (vssadmin delete
+        shadows): kill it, but leave the binary in place. Session-critical
+        processes are never killed.
+        """
+        system_binary = bool(exe_path) and is_protected_system_path(exe_path)
+        if proc_name.lower() in SESSION_CRITICAL or (system_binary and not malicious_cmdline):
+            self._record("SYSTEM_BINARY_FLAGGED_NOT_BLOCKED", pid, proc_name, verdict.reason, exe_path or details)
+            return
+        try:
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+        self.blocked_count += 1
+        vault_id = "mem-threat-terminated"
+        if exe_path and not system_binary and os.path.exists(exe_path):
+            try:
+                vault_id = self.vault.isolate_file(exe_path, reason=verdict.reason)
+            except OSError as err:
+                logger.warning("Could not quarantine %s: %s", exe_path, err)
+        self._record(event_type, pid, proc_name, verdict.reason, details)
+        if self.on_process_blocked:
+            self.on_process_blocked(pid, proc_name, verdict, vault_id)
 
     def _inspect_new_process(self, pid: int):
         try:
@@ -73,69 +130,24 @@ class ProcessMonitor:
             except (psutil.AccessDenied, psutil.NoSuchProcess):
                 pass
 
-            # 1. Inspect command line for fileless attacks, obfuscated powershell, shadowcopy deletion, LOLBins
+            # 1. Command line: fileless attacks, obfuscated PowerShell, shadow copy deletion, LOLBins
             try:
-                cmdline_list = proc.cmdline()
-                cmdline_str = " ".join(cmdline_list)
-                if cmdline_str:
-                    cmd_verdict = self.scanner.scan_bytes(
-                        cmdline_str.encode("utf-8", errors="ignore"),
-                        filename=f"cmdline_{proc_name}"
-                    )
-                    if cmd_verdict.is_malicious():
-                        try:
-                            proc.kill()
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            pass
-                        
-                        self.blocked_count += 1
-                        vault_id = "mem-threat-terminated"
-                        if exe_path and os.path.exists(exe_path) and not exe_path.lower().startswith(r"c:\windows"):
-                            try:
-                                vault_id = self.vault.isolate_file(exe_path, reason=cmd_verdict.reason)
-                            except Exception:
-                                pass
-                        
-                        event_record = {
-                            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                            "type": "PROCESS_CMDLINE_BLOCKED",
-                            "pid": pid,
-                            "process": proc_name,
-                            "reason": cmd_verdict.reason,
-                            "details": cmdline_str[:120]
-                        }
-                        self.recent_events.append(event_record)
-
-                        if self.on_process_blocked:
-                            self.on_process_blocked(pid, proc_name, cmd_verdict, vault_id)
-                        return
+                cmdline_str = " ".join(proc.cmdline())
             except (psutil.AccessDenied, psutil.NoSuchProcess):
-                pass
+                cmdline_str = ""
+            if cmdline_str:
+                cmd_verdict = self.scanner.scan_bytes(
+                    cmdline_str.encode("utf-8", errors="ignore"), filename=f"cmdline_{proc_name}")
+                if cmd_verdict.is_malicious():
+                    self._block(proc, pid, proc_name, exe_path, cmd_verdict,
+                                "PROCESS_CMDLINE_BLOCKED", cmdline_str[:120], malicious_cmdline=True)
+                    return
 
-            # 2. Inspect executable file
+            # 2. Executable file
             if exe_path and os.path.exists(exe_path):
                 verdict = self.scanner.scan_file(exe_path)
                 if verdict.is_malicious():
-                    try:
-                        proc.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-
-                    self.blocked_count += 1
-                    vault_id = self.vault.isolate_file(exe_path, reason=verdict.reason)
-                    
-                    event_record = {
-                        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-                        "type": "PROCESS_BINARY_BLOCKED",
-                        "pid": pid,
-                        "process": proc_name,
-                        "reason": verdict.reason,
-                        "details": exe_path
-                    }
-                    self.recent_events.append(event_record)
-
-                    if self.on_process_blocked:
-                        self.on_process_blocked(pid, proc_name, verdict, vault_id)
+                    self._block(proc, pid, proc_name, exe_path, verdict, "PROCESS_BINARY_BLOCKED", exe_path)
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 

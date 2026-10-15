@@ -14,6 +14,10 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 DEFAULT_VAULT_DIR = r"C:\ProgramData\SentinelCore\Vault"
 
+class QuarantineError(OSError):
+    """The file could not be taken out of place, so nothing was quarantined."""
+
+
 class QuarantineVault:
     def __init__(self, vault_dir: Optional[str] = None, key_file: Optional[str] = None):
         self.vault_dir = vault_dir or os.path.join(os.environ.get("ProgramData", "C:\\ProgramData"), "SentinelCore", "Vault")
@@ -82,16 +86,35 @@ class QuarantineVault:
             """, (vault_id, source_path, file_size, sha256_hash, reason, now_str))
             conn.commit()
 
-        # Securely unlink original file
+        # Unlink the original. If that is impossible (locked, protected,
+        # no rights) the isolation did not happen: undo the copy so the vault
+        # never fills with duplicates of a file that is still in place.
+        try:
+            self._remove_source(source_path)
+        except OSError as err:
+            self._discard(vault_id, target_vault_path)
+            raise QuarantineError(f"Could not remove {source_path}: {err}") from err
+
+        return vault_id
+
+    @staticmethod
+    def _remove_source(source_path: str):
         try:
             os.remove(source_path)
-        except Exception as e:
-            # If standard removal fails, try clearing read-only attributes
+        except PermissionError:
+            # A read-only attribute is the one case worth one retry
             import stat
             os.chmod(source_path, stat.S_IWRITE)
             os.remove(source_path)
 
-        return vault_id
+    def _discard(self, vault_id: str, archive_path: str):
+        try:
+            os.remove(archive_path)
+        except OSError:
+            pass
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM quarantine_manifest WHERE vault_id = ?", (vault_id,))
+            conn.commit()
 
     def restore_file(self, vault_id: str, destination_path: Optional[str] = None) -> bool:
         """Decrypts a quarantined file and restores it to disk."""
