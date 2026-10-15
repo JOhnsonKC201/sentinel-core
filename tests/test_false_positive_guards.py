@@ -227,3 +227,57 @@ def test_session_critical_processes_are_never_killed(scanner, vault, monkeypatch
     monitor, killed = _run_guard(scanner, vault, monkeypatch, critical, [critical, "-x"], cmd_malicious=True)
     assert killed == []
     assert monitor.recent_events[-1]["type"] == "SYSTEM_BINARY_FLAGGED_NOT_BLOCKED"
+
+
+# ---- found by end-to-end QA of the packaged app -----------------------------
+
+EICAR = b"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+
+
+def test_file_shield_quarantines_a_dropped_threat(scanner, vault, workdir):
+    # ReadDirectoryChangesW was given a buffer instead of a size, returned None,
+    # and the TypeError was swallowed: the shield never handled a single event.
+    import time
+    from sentinel_guard.watcher import FilesystemWatcher
+
+    watch = os.path.join(workdir, "Downloads")
+    os.makedirs(watch)
+    alerts = []
+    shield = FilesystemWatcher(scanner=scanner, vault=vault, watch_dirs=[watch],
+                               on_alert=lambda path, verdict, vault_id: alerts.append(path))
+    shield.start()
+    try:
+        time.sleep(0.3)
+        dropped = os.path.join(watch, "invoice.bat")
+        with open(dropped, "wb") as f:
+            f.write(EICAR)
+        deadline = time.time() + 5
+        while os.path.exists(dropped) and time.time() < deadline:
+            time.sleep(0.1)
+        assert not os.path.exists(dropped)
+        assert alerts == [dropped]
+        assert shield.threats_blocked == 1
+    finally:
+        shield.stop()
+
+
+def test_malicious_command_line_never_quarantines_the_interpreter(scanner, vault, workdir, monkeypatch):
+    # QA: the packaged app quarantined .venv\Scripts\python.exe because a
+    # probe passed the EICAR string on python's command line.
+    interpreter = os.path.join(workdir, "python.exe")
+    with open(interpreter, "wb") as f:
+        f.write(b"MZ user-installed interpreter")
+    monitor = ProcessMonitor(scanner, vault)
+    killed = []
+
+    class FakeProc:
+        def name(self): return "python.exe"
+        def exe(self): return interpreter
+        def cmdline(self): return ["python", "-c", EICAR.decode()]
+        def kill(self): killed.append(True)
+
+    monkeypatch.setattr("sentinel_guard.process_monitor.psutil.Process", lambda pid: FakeProc())
+    monitor._inspect_new_process(99)
+    assert killed == [True]
+    assert os.path.exists(interpreter)
+    assert vault.list_quarantined() == []

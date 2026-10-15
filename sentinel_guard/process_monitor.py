@@ -110,7 +110,9 @@ class ProcessMonitor:
             pass
         self.blocked_count += 1
         vault_id = "mem-threat-terminated"
-        if exe_path and not system_binary and os.path.exists(exe_path):
+        # A malicious command line convicts the arguments, not the program
+        # running them (python.exe, node.exe, powershell.exe): kill, keep the file.
+        if exe_path and not system_binary and not malicious_cmdline and os.path.exists(exe_path):
             try:
                 vault_id = self.vault.isolate_file(exe_path, reason=verdict.reason)
             except OSError as err:
