@@ -28,6 +28,19 @@ from tests.test_process_monitor import test_process_audit
 from tests.test_integrity import test_integrity_guard
 from tests.test_ransomware import test_developer_workload_immunity, test_ransomware_burst_mitigation
 from tests.test_web_dashboard import test_web_dashboard_endpoints
+from tests import test_scanner_hardening
+
+HARDENING_TESTS = [
+    test_scanner_hardening.test_every_signature_survives_the_anchor_prefilter,
+    test_scanner_hardening.test_crafted_repetition_does_not_stall_signature_matching,
+    test_scanner_hardening.test_streamed_match_with_wide_gap_across_first_chunk_boundary,
+    test_scanner_hardening.test_signature_update_invalidates_cached_clean_verdict,
+    test_scanner_hardening.test_cache_survives_restart_when_signatures_unchanged,
+    test_scanner_hardening.test_cache_evicts_least_recently_used,
+    test_scanner_hardening.test_signature_past_head_window_is_detected,
+    test_scanner_hardening.test_large_file_is_scanned_end_to_end,
+    test_scanner_hardening.test_reputation_db_from_older_version_is_migrated,
+]
 
 def main():
     print("==========================================================")
@@ -35,7 +48,7 @@ def main():
     print("==========================================================\n")
 
     passed = 0
-    total = 15
+    total = 15 + len(HARDENING_TESTS)
 
     # Layer 1: Quarantine Vault
     print("--- [Layer 1] Cryptographic Quarantine Vault Tests ---")
@@ -140,6 +153,15 @@ def main():
         passed += 1
     except Exception as e:
         print(f"[!] test_web_dashboard_endpoints FAILED: {e}")
+
+    # Layer 8: Scanner Hardening Regressions
+    print("\n--- [Layer 8] Scanner Hardening Regression Tests ---")
+    for hardening_test in HARDENING_TESTS:
+        try:
+            hardening_test()
+            passed += 1
+        except Exception as e:
+            print(f"[!] {hardening_test.__name__} FAILED: {e}")
 
     print("\n" + "="*58)
     print(f"VERIFICATION SUMMARY: {passed}/{total} Test Suites Passed ({passed/total*100:.1f}%)")

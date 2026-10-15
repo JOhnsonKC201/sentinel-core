@@ -6,6 +6,9 @@ Verifies malicious API detection, script execution scoring, and ZIP macro analys
 import os
 import sys
 import io
+import gc
+import shutil
+import tempfile
 import zipfile
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -40,10 +43,17 @@ def test_heuristic_analysis():
     assert any("EmbeddedVbaMacro" in ind or "AutoExec" in ind for ind in res_macro["indicators"])
 
     # 4. Scanner engine integration
-    scanner = SentinelScanner()
-    verdict = scanner.scan_bytes(hollow_imports)
-    assert verdict.verdict == VERDICT_QUARANTINE
-    assert "Tier3:Heuristic" in verdict.reason
+    # Isolated reputation DB: on the shared one a repeat run answers from the Tier 1 cache
+    temp_dir = tempfile.mkdtemp()
+    try:
+        scanner = SentinelScanner(db_path=os.path.join(temp_dir, "test_rep.db"))
+        verdict = scanner.scan_bytes(hollow_imports)
+        assert verdict.verdict == VERDICT_QUARANTINE
+        assert "Tier3:Heuristic" in verdict.reason
+    finally:
+        scanner = None
+        gc.collect()
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
     print("[+] test_heuristic_analysis: PASSED (Dangerous APIs, script keywords, and macro heuristics verified)")
 

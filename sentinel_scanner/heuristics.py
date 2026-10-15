@@ -34,6 +34,12 @@ SCRIPT_INDICATORS = [
     (re.compile(rb"cmd\.exe\s+/c\s+powershell", re.IGNORECASE), "ProcessChain.CmdToPowerShell", 25)
 ]
 
+def rules_fingerprint() -> bytes:
+    """Serializes every weighted rule so cached verdicts can be tied to the rule set that produced them."""
+    api_rules = sorted(DANGEROUS_APIS.items())
+    script_rules = [(pattern.pattern, pattern.flags, tag, weight) for pattern, tag, weight in SCRIPT_INDICATORS]
+    return repr((api_rules, script_rules)).encode("utf-8")
+
 class HeuristicAnalyzer:
     def __init__(self):
         pass
