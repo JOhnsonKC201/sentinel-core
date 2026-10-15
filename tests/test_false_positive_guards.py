@@ -234,13 +234,24 @@ def test_session_critical_processes_are_never_killed(scanner, vault, monkeypatch
 EICAR = b"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 
 
-def test_file_shield_quarantines_a_dropped_threat(scanner, vault, workdir):
+@pytest.fixture
+def shield_dir():
+    # Not under %TEMP%: an installed SentinelCore watches it and would quarantine
+    # the EICAR file before the shield under test sees it.
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build")
+    os.makedirs(base, exist_ok=True)
+    path = tempfile.mkdtemp(prefix="shield_test_", dir=base)
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def test_file_shield_quarantines_a_dropped_threat(scanner, vault, shield_dir):
     # ReadDirectoryChangesW was given a buffer instead of a size, returned None,
     # and the TypeError was swallowed: the shield never handled a single event.
     import time
     from sentinel_guard.watcher import FilesystemWatcher
 
-    watch = os.path.join(workdir, "Downloads")
+    watch = os.path.join(shield_dir, "Downloads")
     os.makedirs(watch)
     alerts = []
     shield = FilesystemWatcher(scanner=scanner, vault=vault, watch_dirs=[watch],
