@@ -292,3 +292,29 @@ def test_malicious_command_line_never_quarantines_the_interpreter(scanner, vault
     assert killed == [True]
     assert os.path.exists(interpreter)
     assert vault.list_quarantined() == []
+
+
+def test_one_failed_file_does_not_drop_the_rest_of_the_batch(scanner, vault, shield_dir):
+    # Another scanner removing a file mid-quarantine raised out of the batch loop,
+    # so every later file in the same notification went unscanned.
+    from sentinel_guard.watcher import FilesystemWatcher
+
+    first = os.path.join(shield_dir, "gone.bat")
+    second = os.path.join(shield_dir, "second.bat")
+    for p in (first, second):
+        with open(p, "wb") as f:
+            f.write(EICAR)
+    shield = FilesystemWatcher(scanner=scanner, vault=vault, watch_dirs=[shield_dir])
+
+    real_isolate = vault.isolate_file
+
+    def raced_isolate(path, reason=""):
+        if path == first:
+            os.remove(path)
+        return real_isolate(path, reason=reason)
+
+    vault.isolate_file = raced_isolate
+    shield._process_batch(shield_dir, [(1, "gone.bat"), (1, "second.bat")])
+
+    assert not os.path.exists(second)
+    assert shield.threats_blocked == 1
